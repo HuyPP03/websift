@@ -1,0 +1,9 @@
+services:
+  web-search-mcp:
+    build: .
+    container_name: web-search-mcp
+    ports:
+      - "${MCP_PORT:-8787}:${MCP_PORT:-8787}"
+    env_file:
+      - .env
+    restart: unless-stopped

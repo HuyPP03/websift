@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "websift"
+version = "0.1.0"
+description = "Self-hosted MCP server for web search (DuckDuckGo) + page fetching. No API key required."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "HuyPP03", email = "huypp03@users.noreply.github.com"},
+]
+keywords = ["mcp", "web-search", "duckduckgo", "ai-agent", "tool-use", "websift"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "mcp>=1.9.0",
+    "ddgs>=9.0.0",
+    "beautifulsoup4>=4.12.0",
+    "pypdf>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "build",
+    "twine",
+    "ruff",
+]
+
+[project.scripts]
+websift = "web_search.server:main"
+
+[project.urls]
+Homepage = "https://github.com/HuyPP03/websift"
+Repository = "https://github.com/HuyPP03/websift"
+Issues = "https://github.com/HuyPP03/websift/issues"
+
+[tool.setuptools.packages.find]
+include = ["web_search*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
