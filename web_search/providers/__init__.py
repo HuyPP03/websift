@@ -1,6 +1,7 @@
 """Search providers package."""
 
 from web_search.providers.base import ProviderCapabilities, SearchProvider, validate_request_capabilities
+from web_search.providers.brave import BraveProvider, BraveProviderConfig
 from web_search.providers.ddgs import DdgsProvider, DdgsProviderConfig
 from web_search.providers.errors import (
     ProviderAuthError,
@@ -12,9 +13,18 @@ from web_search.providers.errors import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
+from web_search.providers.exa import ExaProvider, ExaProviderConfig
+from web_search.providers.fallback import FallbackSearchProvider
 from web_search.providers.registry import create_provider, get_default_provider, list_providers
+from web_search.providers.searxng import SearxngProvider, SearxngProviderConfig
+from web_search.providers.tavily import TavilyProvider, TavilyProviderConfig
 
 __all__ = [
+    "BraveProvider",
+    "BraveProviderConfig",
+    "ExaProvider",
+    "ExaProviderConfig",
+    "FallbackSearchProvider",
     "ProviderAuthError",
     "ProviderCapabilities",
     "ProviderConfigError",
@@ -27,6 +37,10 @@ __all__ = [
     "DdgsProvider",
     "DdgsProviderConfig",
     "SearchProvider",
+    "SearxngProvider",
+    "SearxngProviderConfig",
+    "TavilyProvider",
+    "TavilyProviderConfig",
     "create_provider",
     "get_default_provider",
     "list_providers",

@@ -14,9 +14,13 @@ from web_search.providers.registry import (
 )
 
 
-def test_list_providers_includes_ddgs():
+def test_list_providers_includes_builtin_p1():
     names = list_providers()
     assert "ddgs" in names
+    assert "searxng" in names
+    assert "brave" in names
+    assert "tavily" in names
+    assert "exa" in names
     assert names == tuple(sorted(names))
 
 
@@ -24,7 +28,11 @@ def test_is_registered_case_insensitive():
     assert is_registered("ddgs")
     assert is_registered("DDGS")
     assert is_registered(" Ddgs ")
-    assert not is_registered("brave")
+    assert is_registered("brave")
+    assert is_registered("SEARXNG")
+    assert is_registered("tavily")
+    assert is_registered("EXA")
+    assert not is_registered("serpapi")
     assert not is_registered("")
     assert not is_registered("  ")
 

@@ -126,6 +126,53 @@ def _parse_csv(raw: str | None) -> tuple[str, ...]:
     return tuple(p.strip() for p in raw.split(",") if p.strip())
 
 
+def _load_provider_endpoints(env: Mapping[str, str]) -> dict[str, ProviderEndpoint]:
+    """Read all known provider base URL / API key env vars (for primary + fallbacks)."""
+    return {
+        "searxng": ProviderEndpoint(
+            base_url=_get_optional_str(env, "SEARXNG_BASE_URL"),
+            api_key=_get_optional_str(env, "SEARXNG_API_KEY"),
+        ),
+        "brave": ProviderEndpoint(
+            base_url=_get_optional_str(env, "BRAVE_BASE_URL"),
+            api_key=_get_optional_str(env, "BRAVE_API_KEY"),
+        ),
+        "tavily": ProviderEndpoint(
+            base_url=_get_optional_str(env, "TAVILY_BASE_URL"),
+            api_key=_get_optional_str(env, "TAVILY_API_KEY"),
+        ),
+        "exa": ProviderEndpoint(
+            base_url=_get_optional_str(env, "EXA_BASE_URL"),
+            api_key=_get_optional_str(env, "EXA_API_KEY"),
+        ),
+    }
+
+
+def _require_provider_credentials(name: str, provider: ProviderSettings, *, role: str) -> None:
+    """Fail-fast credential checks for a named provider in primary or fallback role."""
+    ep = provider.endpoint(name)
+    if name == "searxng" and not (ep.base_url or "").strip():
+        raise SettingsError(
+            f"SEARXNG_BASE_URL is required when {role} uses searxng",
+            code="missing_base_url",
+        )
+    if name == "brave" and not (ep.api_key or "").strip():
+        raise SettingsError(
+            f"BRAVE_API_KEY is required when {role} uses brave",
+            code="missing_api_key",
+        )
+    if name == "tavily" and not (ep.api_key or "").strip():
+        raise SettingsError(
+            f"TAVILY_API_KEY is required when {role} uses tavily",
+            code="missing_api_key",
+        )
+    if name == "exa" and not (ep.api_key or "").strip():
+        raise SettingsError(
+            f"EXA_API_KEY is required when {role} uses exa",
+            code="missing_api_key",
+        )
+
+
 @dataclass(frozen=True)
 class ServerSettings:
     host: str = "127.0.0.1"
@@ -133,6 +180,18 @@ class ServerSettings:
     transport: str = "streamable-http"
     auth_mode: str = "none"
     max_request_body_bytes: int | None = None
+
+
+@dataclass(frozen=True)
+class ProviderEndpoint:
+    """Per-provider base URL / API key (loaded for primary + fallback chain)."""
+
+    base_url: str | None = None
+    api_key: str | None = None
+
+    def __repr__(self) -> str:  # pragma: no cover - trivial
+        key = _REDACTED if self.api_key else None
+        return f"ProviderEndpoint(base_url={self.base_url!r}, api_key={key!r})"
 
 
 @dataclass(frozen=True)
@@ -149,6 +208,18 @@ class ProviderSettings:
     allow_unsupported_filters: bool = False
     base_url: str | None = None
     api_key: str | None = None
+    allow_http: bool = False
+    # Credentials for all known HTTP providers (primary + fallbacks).
+    endpoints: dict[str, ProviderEndpoint] = field(default_factory=dict)
+
+    def endpoint(self, name: str) -> ProviderEndpoint:
+        key = (name or "").strip().lower()
+        if key in self.endpoints:
+            return self.endpoints[key]
+        # Primary fields remain authoritative for the selected provider name.
+        if key == (self.name or "").strip().lower():
+            return ProviderEndpoint(base_url=self.base_url, api_key=self.api_key)
+        return ProviderEndpoint()
 
     def __repr__(self) -> str:  # pragma: no cover - trivial
         key = _REDACTED if self.api_key else None
@@ -299,16 +370,30 @@ class AppSettings:
         if not name:
             raise SettingsError("SEARCH_PROVIDER must not be empty", code="missing_provider")
         # Allowlist check only when registry available; avoid circular import issues at module load.
-        from web_search.providers.registry import is_registered
+        from web_search.providers.registry import is_registered, list_providers
 
         if not is_registered(name):
-            from web_search.providers.registry import list_providers
-
             known = ", ".join(list_providers()) or "(none)"
             raise SettingsError(
                 f"Unknown SEARCH_PROVIDER {self.provider.name!r}. Allowed: {known}",
                 code="unknown_provider",
             )
+        _require_provider_credentials(name, self.provider, role="SEARCH_PROVIDER")
+        seen = {name}
+        for fb in self.provider.fallback_providers:
+            fb_name = (fb or "").strip().lower()
+            if not fb_name:
+                continue
+            if fb_name in seen:
+                continue
+            if not is_registered(fb_name):
+                known = ", ".join(list_providers()) or "(none)"
+                raise SettingsError(
+                    f"Unknown SEARCH_FALLBACK_PROVIDERS entry {fb!r}. Allowed: {known}",
+                    code="unknown_provider",
+                )
+            _require_provider_credentials(fb_name, self.provider, role="SEARCH_FALLBACK_PROVIDERS")
+            seen.add(fb_name)
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> AppSettings:
@@ -337,21 +422,11 @@ class AppSettings:
             fetch_timeout = 30.0
 
         provider_name = _get_str(env, "SEARCH_PROVIDER", "ddgs").strip().lower()
-        # Provider-specific secrets (P1 adapters; stored only, not used by ddgs).
-        api_key = None
-        base_url = None
-        if provider_name == "searxng":
-            base_url = _get_optional_str(env, "SEARXNG_BASE_URL")
-            api_key = _get_optional_str(env, "SEARXNG_API_KEY")
-        elif provider_name == "brave":
-            base_url = _get_optional_str(env, "BRAVE_BASE_URL")
-            api_key = _get_optional_str(env, "BRAVE_API_KEY")
-        elif provider_name == "tavily":
-            base_url = _get_optional_str(env, "TAVILY_BASE_URL")
-            api_key = _get_optional_str(env, "TAVILY_API_KEY")
-        elif provider_name == "exa":
-            base_url = _get_optional_str(env, "EXA_BASE_URL")
-            api_key = _get_optional_str(env, "EXA_API_KEY")
+        # Load all known provider endpoints so fallbacks can resolve credentials.
+        endpoints = _load_provider_endpoints(env)
+        primary_ep = endpoints.get(provider_name, ProviderEndpoint())
+        base_url = primary_ep.base_url
+        api_key = primary_ep.api_key
 
         auth_mode = _get_str(env, "MCP_AUTH_MODE", "none").strip().lower()
         bearer = _get_optional_str(env, "MCP_BEARER_TOKEN")
@@ -383,6 +458,8 @@ class AppSettings:
                 allow_unsupported_filters=_get_bool(env, "SEARCH_ALLOW_UNSUPPORTED_FILTERS", False),
                 base_url=base_url,
                 api_key=api_key,
+                allow_http=_get_bool(env, "PROVIDER_ALLOW_HTTP", False),
+                endpoints=endpoints,
             ),
             fetch=FetchSettings(
                 timeout_seconds=fetch_timeout,

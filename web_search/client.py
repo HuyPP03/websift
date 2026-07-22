@@ -17,6 +17,7 @@ from web_search.models import (
     SearchResponse,
 )
 from web_search.providers.base import SearchProvider
+from web_search.providers.brave import BraveProviderConfig
 from web_search.providers.ddgs import DdgsProviderConfig
 from web_search.providers.errors import (
     ProviderAuthError,
@@ -27,8 +28,12 @@ from web_search.providers.errors import (
     ProviderUnavailableError,
     sanitize_provider_message,
 )
+from web_search.providers.exa import ExaProviderConfig
+from web_search.providers.fallback import FallbackSearchProvider
 from web_search.providers.registry import create_provider, get_default_provider
-from web_search.settings import AppSettings
+from web_search.providers.searxng import SearxngProviderConfig
+from web_search.providers.tavily import TavilyProviderConfig
+from web_search.settings import AppSettings, ProviderSettings
 
 _GITHUB_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 _GITHUB_NON_OWNER_SEGMENTS = {
@@ -326,12 +331,80 @@ class WebSearchClient:
 
 def _provider_from_settings(settings: AppSettings) -> SearchProvider:
     name = (settings.provider.name or "ddgs").strip().lower()
+    primary = _single_provider_from_settings(name, settings.provider)
+    fallbacks: list[SearchProvider] = []
+    seen = {name}
+    for raw in settings.provider.fallback_providers:
+        fb = (raw or "").strip().lower()
+        if not fb or fb in seen:
+            continue
+        fallbacks.append(_single_provider_from_settings(fb, settings.provider))
+        seen.add(fb)
+    if not fallbacks:
+        return primary
+    return FallbackSearchProvider([primary, *fallbacks])
+
+
+def _single_provider_from_settings(name: str, p: ProviderSettings) -> SearchProvider:
+    ep = p.endpoint(name)
     if name == "ddgs":
         return create_provider(
             "ddgs",
             DdgsProviderConfig(
-                timeout=int(settings.provider.timeout_seconds),
-                allow_unsupported_filters=settings.provider.allow_unsupported_filters,
+                timeout=int(p.timeout_seconds),
+                allow_unsupported_filters=p.allow_unsupported_filters,
+            ),
+        )
+    if name == "searxng":
+        return create_provider(
+            "searxng",
+            SearxngProviderConfig(
+                base_url=ep.base_url or "",
+                api_key=ep.api_key,
+                timeout=float(p.timeout_seconds),
+                allow_http=bool(p.allow_http),
+                allow_unsupported_filters=p.allow_unsupported_filters,
+                retry_max=int(p.retry_max),
+                retry_backoff_seconds=float(p.retry_backoff_seconds),
+            ),
+        )
+    if name == "brave":
+        return create_provider(
+            "brave",
+            BraveProviderConfig(
+                api_key=ep.api_key or "",
+                base_url=ep.base_url or "https://api.search.brave.com",
+                timeout=float(p.timeout_seconds),
+                allow_http=bool(p.allow_http),
+                allow_unsupported_filters=p.allow_unsupported_filters,
+                retry_max=int(p.retry_max),
+                retry_backoff_seconds=float(p.retry_backoff_seconds),
+            ),
+        )
+    if name == "tavily":
+        return create_provider(
+            "tavily",
+            TavilyProviderConfig(
+                api_key=ep.api_key or "",
+                base_url=ep.base_url or "https://api.tavily.com",
+                timeout=float(p.timeout_seconds),
+                allow_http=bool(p.allow_http),
+                allow_unsupported_filters=p.allow_unsupported_filters,
+                retry_max=int(p.retry_max),
+                retry_backoff_seconds=float(p.retry_backoff_seconds),
+            ),
+        )
+    if name == "exa":
+        return create_provider(
+            "exa",
+            ExaProviderConfig(
+                api_key=ep.api_key or "",
+                base_url=ep.base_url or "https://api.exa.ai",
+                timeout=float(p.timeout_seconds),
+                allow_http=bool(p.allow_http),
+                allow_unsupported_filters=p.allow_unsupported_filters,
+                retry_max=int(p.retry_max),
+                retry_backoff_seconds=float(p.retry_backoff_seconds),
             ),
         )
     return create_provider(name, None)
