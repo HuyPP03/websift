@@ -91,8 +91,14 @@ def test_tavily_via_client_settings(monkeypatch: pytest.MonkeyPatch):
 
     real_init = tavily_mod.TavilyProvider.__init__
 
-    def _init(self, config=None, *, http=None):
-        real_init(self, config, http=http or _FakeHttp(responses=[payload]))
+    def _init(self, config=None, *, http=None, fetch_context=None, pdf_semaphore=None):
+        real_init(
+            self,
+            config,
+            http=http or _FakeHttp(responses=[payload]),
+            fetch_context=fetch_context,
+            pdf_semaphore=pdf_semaphore,
+        )
 
     monkeypatch.setattr(tavily_mod.TavilyProvider, "__init__", _init)
 
@@ -115,3 +121,72 @@ def test_settings_require_tavily_api_key():
     with pytest.raises(Exception) as ei:
         s.validate()
     assert "TAVILY_API_KEY" in str(ei.value) or getattr(ei.value, "code", "") == "missing_api_key"
+
+
+def test_tavily_search_does_not_request_raw_content():
+    http = _FakeHttp(responses=[{"results": []}])
+    TavilyProvider(TavilyProviderConfig(api_key="k"), http=http).search(SearchRequest(query="q", max_results=3))
+    assert http.calls[0]["body"]["include_raw_content"] is False
+
+
+def test_tavily_fetch_extract_success():
+    payload = {
+        "results": [
+            {"url": "https://example.com/a", "raw_content": "# Hello\n\nWorld"},
+        ]
+    }
+    http = _FakeHttp(responses=[payload])
+    provider = TavilyProvider(TavilyProviderConfig(api_key="k"), http=http)
+    result = provider.fetch("https://example.com/a")
+    assert result.ok
+    assert "Hello" in result.content
+    assert result.content_type == "text/markdown"
+    assert result.status_code is None
+    assert http.calls[0]["path"] == "/extract"
+    assert http.calls[0]["body"]["urls"] == ["https://example.com/a"]
+
+
+def test_tavily_fetch_failed_results_falls_back_generic(monkeypatch):
+    http = _FakeHttp(responses=[{"results": [], "failed_results": [{"url": "https://example.com/a", "error": "x"}]}])
+    provider = TavilyProvider(TavilyProviderConfig(api_key="k"), http=http)
+
+    def fake_fetch(*a, **k):
+        from web_search.models import FetchResult
+
+        return FetchResult.success(a[0], "generic-body", content_type="text/plain")
+
+    monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+    out = provider.fetch("https://example.com/a")
+    assert out.ok
+    assert out.content == "generic-body"
+    assert http.calls[0]["path"] == "/extract"
+
+
+def test_tavily_fetch_auth_error_surfaces():
+    http = _FakeHttp(error=ProviderAuthError("Provider authentication failed.", provider="tavily"))
+    provider = TavilyProvider(TavilyProviderConfig(api_key="bad"), http=http)
+    result = provider.fetch("https://example.com/a")
+    assert not result.ok
+    assert result.error_category == "auth"
+    assert result.error_message.startswith("Fetch failed:")
+
+
+def test_tavily_fetch_native_disabled_uses_generic(monkeypatch):
+    from web_search.providers.base import FetchContext
+
+    http = _FakeHttp(responses=[{"results": [{"url": "https://example.com/a", "raw_content": "paid"}]}])
+    provider = TavilyProvider(
+        TavilyProviderConfig(api_key="k"),
+        http=http,
+        fetch_context=FetchContext(native_fetch=False),
+    )
+
+    def fake_fetch(*a, **k):
+        from web_search.models import FetchResult
+
+        return FetchResult.success(a[0], "generic-only", content_type="text/plain")
+
+    monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+    out = provider.fetch("https://example.com/a")
+    assert out.content == "generic-only"
+    assert http.calls == []

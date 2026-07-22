@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from web_search.models import SearchRequest, SearchResult
 from web_search.provider_http import ProviderHttpClient, ProviderHttpConfig
-from web_search.providers.base import ProviderCapabilities, validate_request_capabilities
+from web_search.providers.base import BaseProvider, FetchContext, ProviderCapabilities, validate_request_capabilities
 from web_search.providers.errors import ProviderConfigError, ProviderResponseError
 
 
@@ -23,7 +24,7 @@ class SearxngProviderConfig:
     auth_header: str = "Authorization"
 
 
-class SearxngProvider:
+class SearxngProvider(BaseProvider):
     """SearXNG JSON search API (`/search?format=json`)."""
 
     name = "searxng"
@@ -35,7 +36,15 @@ class SearxngProvider:
         domain_filter=False,
     )
 
-    def __init__(self, config: SearxngProviderConfig | None = None, *, http: ProviderHttpClient | None = None):
+    def __init__(
+        self,
+        config: SearxngProviderConfig | None = None,
+        *,
+        http: ProviderHttpClient | None = None,
+        fetch_context: FetchContext | None = None,
+        pdf_semaphore: Any = None,
+    ):
+        super().__init__(fetch_context=fetch_context, pdf_semaphore=pdf_semaphore)
         if config is None and http is None:
             raise ProviderConfigError("SearXNG base_url is required.", code="missing_base_url", provider="searxng")
         self.config = config or SearxngProviderConfig(base_url=http.base_url if http else "")

@@ -5,7 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.1] - 2026-07-22
+
+Provider-owned fetch. Public Python/MCP tool names and string APIs stay compatible.
+
+### Changed
+
+- Fetch is owned by providers via `BaseProvider.fetch` (generic SSRF-safe default). Tavily/Exa override with exact-URL extract/contents when keyed; URL-level failures fall back to generic. Optional `PROVIDER_NATIVE_FETCH=false` forces generic fetch.
+- `WebSearchClient.fetch_structured` delegates to the primary provider only; search fallback chains do not run extract.
+
+### Compatibility notes
+
+| Item                                       | Behavior in 0.3.1                                              |
+| ------------------------------------------ | -------------------------------------------------------------- |
+| `from web_search import WebSearchClient` | Unchanged                                                      |
+| PyPI / CLI`websift`                      | Unchanged names                                                |
+| MCP tools`web_search` / `web_fetch`    | Same names and`query` / `url` schemas                      |
+| Default fetch path                         | Still SSRF-safe generic when provider has no native extract    |
+| `PROVIDER_NATIVE_FETCH`                  | Default`true`; set `false` to force generic for Tavily/Exa |
 
 ## [0.3.0] - 2026-07-22
 
@@ -30,14 +47,14 @@ Providers, optional MCP auth, and hardened packaging/Docker. Public Python/MCP t
 
 ### Compatibility notes
 
-| Item | Behavior in 0.3.0 |
-| ---- | ----------------- |
-| `from web_search import WebSearchClient` | Unchanged |
-| PyPI / CLI `websift` | Unchanged names |
-| MCP tools `web_search` / `web_fetch` | Same names and `query` / `url` schemas |
-| `MCP_HOST` default | Loopback (`127.0.0.1`); Docker image sets bind for published ports |
-| `MCP_AUTH_MODE` | Default `none`; opt-in `bearer` for HTTP/SSE only |
-| Provider selection | Server-wide env only (not per tool call) |
+| Item                                       | Behavior in 0.3.0                                                    |
+| ------------------------------------------ | -------------------------------------------------------------------- |
+| `from web_search import WebSearchClient` | Unchanged                                                            |
+| PyPI / CLI`websift`                      | Unchanged names                                                      |
+| MCP tools`web_search` / `web_fetch`    | Same names and`query` / `url` schemas                            |
+| `MCP_HOST` default                       | Loopback (`127.0.0.1`); Docker image sets bind for published ports |
+| `MCP_AUTH_MODE`                          | Default`none`; opt-in `bearer` for HTTP/SSE only                 |
+| Provider selection                         | Server-wide env only (not per tool call)                             |
 
 ## [0.2.0] - 2026-07-22
 
@@ -68,14 +85,14 @@ Hardening release (P0). Public Python/MCP tool names and string APIs stay compat
 
 ### Compatibility notes
 
-| Item | Behavior in 0.2.0 |
-| ---- | ----------------- |
-| `from web_search import WebSearchClient` | Unchanged |
-| PyPI / CLI `websift` | Unchanged names |
-| `WebSearchClient(max_results=..., timeout=..., max_page_chars=...)` | Supported; `timeout` still maps to both search and fetch |
-| MCP tools `web_search` / `web_fetch` | Same names and `query` / `url` schemas |
-| `MCP_HOST` default | **Breaking default**: `0.0.0.0` → `127.0.0.1` |
-| `SEARCH_TIMEOUT` | Still read as alias for timeouts |
+| Item                                                                  | Behavior in 0.2.0                                         |
+| --------------------------------------------------------------------- | --------------------------------------------------------- |
+| `from web_search import WebSearchClient`                            | Unchanged                                                 |
+| PyPI / CLI`websift`                                                 | Unchanged names                                           |
+| `WebSearchClient(max_results=..., timeout=..., max_page_chars=...)` | Supported;`timeout` still maps to both search and fetch |
+| MCP tools`web_search` / `web_fetch`                               | Same names and`query` / `url` schemas                 |
+| `MCP_HOST` default                                                  | **Breaking default**: `0.0.0.0` → `127.0.0.1`  |
+| `SEARCH_TIMEOUT`                                                    | Still read as alias for timeouts                          |
 
 ## [0.1.0] - 2026-07-20
 

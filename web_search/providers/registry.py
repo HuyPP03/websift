@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from web_search.providers.base import SearchProvider
+from web_search.providers.base import FetchContext, SearchProvider
 from web_search.providers.brave import BraveProvider, BraveProviderConfig
 from web_search.providers.ddgs import DdgsProvider, DdgsProviderConfig
 from web_search.providers.errors import ProviderConfigError
@@ -16,18 +16,36 @@ from web_search.providers.exa import ExaProvider, ExaProviderConfig
 from web_search.providers.searxng import SearxngProvider, SearxngProviderConfig
 from web_search.providers.tavily import TavilyProvider, TavilyProviderConfig
 
-ProviderFactory = Callable[[Any], SearchProvider]
+ProviderFactory = Callable[..., SearchProvider]
 
 
-def _make_ddgs(cfg: Any) -> SearchProvider:
-    return DdgsProvider(cfg if isinstance(cfg, DdgsProviderConfig) else DdgsProviderConfig())
+def _make_ddgs(
+    cfg: Any,
+    *,
+    fetch_context: FetchContext | None = None,
+    pdf_semaphore: Any = None,
+) -> SearchProvider:
+    return DdgsProvider(
+        cfg if isinstance(cfg, DdgsProviderConfig) else DdgsProviderConfig(),
+        fetch_context=fetch_context,
+        pdf_semaphore=pdf_semaphore,
+    )
 
 
-def _make_searxng(cfg: Any) -> SearchProvider:
+def _make_searxng(
+    cfg: Any,
+    *,
+    fetch_context: FetchContext | None = None,
+    pdf_semaphore: Any = None,
+) -> SearchProvider:
     if isinstance(cfg, SearxngProviderConfig):
-        return SearxngProvider(cfg)
+        return SearxngProvider(cfg, fetch_context=fetch_context, pdf_semaphore=pdf_semaphore)
     if isinstance(cfg, dict):
-        return SearxngProvider(SearxngProviderConfig(**cfg))
+        return SearxngProvider(
+            SearxngProviderConfig(**cfg),
+            fetch_context=fetch_context,
+            pdf_semaphore=pdf_semaphore,
+        )
     raise ProviderConfigError(
         "SearXNG requires SearxngProviderConfig (base_url).",
         code="missing_config",
@@ -35,11 +53,20 @@ def _make_searxng(cfg: Any) -> SearchProvider:
     )
 
 
-def _make_brave(cfg: Any) -> SearchProvider:
+def _make_brave(
+    cfg: Any,
+    *,
+    fetch_context: FetchContext | None = None,
+    pdf_semaphore: Any = None,
+) -> SearchProvider:
     if isinstance(cfg, BraveProviderConfig):
-        return BraveProvider(cfg)
+        return BraveProvider(cfg, fetch_context=fetch_context, pdf_semaphore=pdf_semaphore)
     if isinstance(cfg, dict):
-        return BraveProvider(BraveProviderConfig(**cfg))
+        return BraveProvider(
+            BraveProviderConfig(**cfg),
+            fetch_context=fetch_context,
+            pdf_semaphore=pdf_semaphore,
+        )
     raise ProviderConfigError(
         "Brave requires BraveProviderConfig (api_key).",
         code="missing_config",
@@ -47,11 +74,20 @@ def _make_brave(cfg: Any) -> SearchProvider:
     )
 
 
-def _make_tavily(cfg: Any) -> SearchProvider:
+def _make_tavily(
+    cfg: Any,
+    *,
+    fetch_context: FetchContext | None = None,
+    pdf_semaphore: Any = None,
+) -> SearchProvider:
     if isinstance(cfg, TavilyProviderConfig):
-        return TavilyProvider(cfg)
+        return TavilyProvider(cfg, fetch_context=fetch_context, pdf_semaphore=pdf_semaphore)
     if isinstance(cfg, dict):
-        return TavilyProvider(TavilyProviderConfig(**cfg))
+        return TavilyProvider(
+            TavilyProviderConfig(**cfg),
+            fetch_context=fetch_context,
+            pdf_semaphore=pdf_semaphore,
+        )
     raise ProviderConfigError(
         "Tavily requires TavilyProviderConfig (api_key).",
         code="missing_config",
@@ -59,11 +95,20 @@ def _make_tavily(cfg: Any) -> SearchProvider:
     )
 
 
-def _make_exa(cfg: Any) -> SearchProvider:
+def _make_exa(
+    cfg: Any,
+    *,
+    fetch_context: FetchContext | None = None,
+    pdf_semaphore: Any = None,
+) -> SearchProvider:
     if isinstance(cfg, ExaProviderConfig):
-        return ExaProvider(cfg)
+        return ExaProvider(cfg, fetch_context=fetch_context, pdf_semaphore=pdf_semaphore)
     if isinstance(cfg, dict):
-        return ExaProvider(ExaProviderConfig(**cfg))
+        return ExaProvider(
+            ExaProviderConfig(**cfg),
+            fetch_context=fetch_context,
+            pdf_semaphore=pdf_semaphore,
+        )
     raise ProviderConfigError(
         "Exa requires ExaProviderConfig (api_key).",
         code="missing_config",
@@ -89,7 +134,13 @@ def is_registered(name: str) -> bool:
     return (name or "").strip().lower() in _REGISTRY
 
 
-def create_provider(name: str, config: Any = None) -> SearchProvider:
+def create_provider(
+    name: str,
+    config: Any = None,
+    *,
+    fetch_context: FetchContext | None = None,
+    pdf_semaphore: Any = None,
+) -> SearchProvider:
     """Instantiate an allowlisted provider.
 
     Raises ``ProviderConfigError`` for unknown names (startup validation).
@@ -104,8 +155,18 @@ def create_provider(name: str, config: Any = None) -> SearchProvider:
             f"Unknown search provider {name!r}. Allowed: {known}",
             code="unknown_provider",
         )
-    return factory(config)
+    return factory(config, fetch_context=fetch_context, pdf_semaphore=pdf_semaphore)
 
 
-def get_default_provider(*, timeout: int = 30) -> SearchProvider:
-    return create_provider("ddgs", DdgsProviderConfig(timeout=timeout))
+def get_default_provider(
+    *,
+    timeout: int = 30,
+    fetch_context: FetchContext | None = None,
+    pdf_semaphore: Any = None,
+) -> SearchProvider:
+    return create_provider(
+        "ddgs",
+        DdgsProviderConfig(timeout=timeout),
+        fetch_context=fetch_context,
+        pdf_semaphore=pdf_semaphore,
+    )

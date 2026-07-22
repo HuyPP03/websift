@@ -357,12 +357,14 @@ Chỉ cấu hình server-wide (`SEARCH_PROVIDER`). Tool MCP không nhận provid
 | **ddgs** (mặc định) | base | không | DuckDuckGo qua `ddgs` |
 | **searxng** | `websift[searxng]` | `SEARXNG_BASE_URL` (bắt buộc), `SEARXNG_API_KEY` tùy chọn | Self-hosted; `PROVIDER_ALLOW_HTTP=true` chỉ cho `http://` local |
 | **brave** | `websift[brave]` | `BRAVE_API_KEY`, `BRAVE_BASE_URL` tùy chọn | |
-| **tavily** | `websift[tavily]` | `TAVILY_API_KEY`, `TAVILY_BASE_URL` tùy chọn | |
+| **tavily** | `websift[tavily]` | `TAVILY_API_KEY`, `TAVILY_BASE_URL` tùy chọn | `web_fetch` dùng `/extract` khi `PROVIDER_NATIVE_FETCH=true` |
 | **exa** | `websift[exa]` | `EXA_API_KEY`, `EXA_BASE_URL` tùy chọn | |
 
 `pip install 'websift[providers]'` — alias toàn bộ provider HTTP (hiện không thêm wheel ngoài base; adapter dùng stdlib HTTP).
 
 Filter tùy chọn: `SEARCH_SAFE_SEARCH`, `SEARCH_REGION`, `SEARCH_TIME_RANGE`. Fallback opt-in: `SEARCH_FALLBACK_PROVIDERS` (không fallback lỗi config/auth).
+
+`PROVIDER_NATIVE_FETCH=true` (mặc định): Tavily/Exa dùng extract/contents cho `web_fetch` (tốn credit); `false` luôn generic SSRF-safe fetch. Fallback search **không** áp dụng cho fetch.
 
 ### Giới hạn nội bộ
 

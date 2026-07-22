@@ -14,7 +14,7 @@ def test_version_is_semver_like():
 
 
 def test_version_is_providers_release():
-    assert web_search.__version__ == "0.3.0"
+    assert web_search.__version__ == "0.3.1"
 
 
 def test_distribution_version_matches_package_when_installed():

@@ -103,8 +103,14 @@ def test_brave_via_client_settings(monkeypatch: pytest.MonkeyPatch):
 
     real_init = brave_mod.BraveProvider.__init__
 
-    def _init(self, config=None, *, http=None):
-        real_init(self, config, http=http or _FakeHttp(responses=[payload]))
+    def _init(self, config=None, *, http=None, fetch_context=None, pdf_semaphore=None):
+        real_init(
+            self,
+            config,
+            http=http or _FakeHttp(responses=[payload]),
+            fetch_context=fetch_context,
+            pdf_semaphore=pdf_semaphore,
+        )
 
     monkeypatch.setattr(brave_mod.BraveProvider, "__init__", _init)
 

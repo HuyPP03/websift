@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from web_search.models import SearchRequest, SearchResult
-from web_search.providers.base import ProviderCapabilities, validate_request_capabilities
+from web_search.providers.base import BaseProvider, FetchContext, ProviderCapabilities, validate_request_capabilities
 from web_search.providers.errors import (
     ProviderError,
     ProviderImportError,
@@ -22,7 +23,7 @@ class DdgsProviderConfig:
     allow_unsupported_filters: bool = False
 
 
-class DdgsProvider:
+class DdgsProvider(BaseProvider):
     """DuckDuckGo search via the ``ddgs`` package."""
 
     name = "ddgs"
@@ -34,7 +35,14 @@ class DdgsProvider:
         domain_filter=False,
     )
 
-    def __init__(self, config: DdgsProviderConfig | None = None):
+    def __init__(
+        self,
+        config: DdgsProviderConfig | None = None,
+        *,
+        fetch_context: FetchContext | None = None,
+        pdf_semaphore: Any = None,
+    ):
+        super().__init__(fetch_context=fetch_context, pdf_semaphore=pdf_semaphore)
         self.config = config or DdgsProviderConfig()
 
     def search(self, request: SearchRequest) -> list[SearchResult]:

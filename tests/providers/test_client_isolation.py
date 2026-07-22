@@ -22,7 +22,7 @@ def test_github_shortcut_does_not_attach_provider_secrets(monkeypatch):
             return FetchResult.success(url, "# Hello\n", content_type="text/plain", status_code=200)
         return FetchResult.failure(url, "skip", ErrorCategory.UNKNOWN)
 
-    monkeypatch.setattr("web_search.client.fetch_raw", fake_fetch)
+    monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
     out = WebSearchClient().fetch("https://github.com/python/cpython")
     assert "Hello" in out
     assert calls
@@ -48,3 +48,35 @@ def test_github_shortcut_does_not_attach_provider_secrets(monkeypatch):
     except Exception:
         raised = True
     assert raised
+
+
+def test_tavily_extract_keeps_secrets_on_provider_http(monkeypatch):
+    """Native extract posts to Tavily only; generic fallback has no provider headers."""
+    from web_search.models import FetchResult
+    from web_search.providers.tavily import TavilyProvider, TavilyProviderConfig
+
+    class FakeHttp:
+        def __init__(self):
+            self.calls = []
+            self.base_url = "https://api.tavily.com"
+            self._headers = {"Authorization": "Bearer tavily-secret"}
+
+        def post_json(self, path="", *, params=None, json_body=None, extra_headers=None, provider=None):
+            self.calls.append({"path": path, "body": dict(json_body or {})})
+            return {"failed_results": [{"url": json_body["urls"][0], "error": "nope"}]}
+
+    generic_headers = []
+
+    def fake_fetch(url, timeout, max_b, max_pdf, extra_headers=None, **kwargs):
+        generic_headers.append(extra_headers)
+        return FetchResult.success(url, "generic", content_type="text/plain")
+
+    monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+    http = FakeHttp()
+    provider = TavilyProvider(TavilyProviderConfig(api_key="tavily-secret"), http=http)
+    out = provider.fetch("https://example.com/page")
+    assert out.content == "generic"
+    assert http.calls[0]["path"] == "/extract"
+    assert http.calls[0]["body"]["urls"] == ["https://example.com/page"]
+    # generic path must not receive Authorization
+    assert not generic_headers[0] or "Authorization" not in (generic_headers[0] or {})

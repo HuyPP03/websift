@@ -160,8 +160,8 @@ def test_client_fallback_chain(monkeypatch: pytest.MonkeyPatch):
 
     real_brave = brave_mod.BraveProvider.__init__
 
-    def _brave_init(self, config=None, *, http=None):
-        real_brave(self, config, http=http or _BraveHttp())
+    def _brave_init(self, config=None, *, http=None, fetch_context=None, pdf_semaphore=None):
+        real_brave(self, config, http=http or _BraveHttp(), fetch_context=fetch_context, pdf_semaphore=pdf_semaphore)
 
     monkeypatch.setattr(brave_mod.BraveProvider, "__init__", _brave_init)
 

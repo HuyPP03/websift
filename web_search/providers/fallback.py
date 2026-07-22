@@ -2,24 +2,42 @@
 
 from __future__ import annotations
 
-from web_search.models import SearchRequest, SearchResult
-from web_search.providers.base import ProviderCapabilities, SearchProvider
+from typing import Any
+
+from web_search.models import FetchResult, SearchRequest, SearchResult
+from web_search.providers.base import BaseProvider, FetchContext, ProviderCapabilities, SearchProvider
 from web_search.providers.errors import ProviderAuthError, ProviderConfigError, ProviderError
 
 
-class FallbackSearchProvider:
-    """Try primary then configured fallbacks.
+class FallbackSearchProvider(BaseProvider):
+    """Try primary then configured fallbacks for **search** only.
 
-    Does **not** fall back on config/auth errors (fail fast).
-    Falls back on timeout / rate-limit / unavailable / response / import errors.
+    ``fetch`` always uses the primary provider (no multi-vendor extract chain).
+    Does **not** fall back search on config/auth errors (fail fast).
+    Falls back search on timeout / rate-limit / unavailable / response / import errors.
     """
 
-    def __init__(self, providers: list[SearchProvider]):
+    def __init__(
+        self,
+        providers: list[SearchProvider],
+        *,
+        fetch_context: FetchContext | None = None,
+        pdf_semaphore: Any = None,
+    ):
         if not providers:
             raise ProviderConfigError("Fallback chain requires at least one provider.", code="empty_fallback_chain")
         self._providers = list(providers)
-        self.name = self._providers[0].name
-        self.capabilities = getattr(self._providers[0], "capabilities", ProviderCapabilities())
+        primary = self._providers[0]
+        # Prefer primary's fetch context when not explicitly provided.
+        ctx = fetch_context
+        if ctx is None and isinstance(primary, BaseProvider):
+            ctx = primary._fetch_context
+        sem = pdf_semaphore
+        if sem is None and isinstance(primary, BaseProvider):
+            sem = primary._pdf_semaphore
+        super().__init__(fetch_context=ctx, pdf_semaphore=sem)
+        self.name = primary.name
+        self.capabilities = getattr(primary, "capabilities", ProviderCapabilities())
 
     @property
     def providers(self) -> tuple[SearchProvider, ...]:
@@ -38,3 +56,8 @@ class FallbackSearchProvider:
                 continue
         assert last_error is not None
         raise last_error
+
+    def fetch(self, url: str) -> FetchResult:
+        """Exact-URL fetch uses primary only — never the search fallback chain."""
+        primary = self._providers[0]
+        return primary.fetch(url)

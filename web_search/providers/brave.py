@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from web_search.models import SearchRequest, SearchResult
 from web_search.provider_http import ProviderHttpClient, ProviderHttpConfig
-from web_search.providers.base import ProviderCapabilities, validate_request_capabilities
+from web_search.providers.base import BaseProvider, FetchContext, ProviderCapabilities, validate_request_capabilities
 from web_search.providers.errors import ProviderConfigError, ProviderResponseError
 
 _DEFAULT_BRAVE_BASE = "https://api.search.brave.com"
@@ -23,7 +24,7 @@ class BraveProviderConfig:
     retry_backoff_seconds: float = 0.5
 
 
-class BraveProvider:
+class BraveProvider(BaseProvider):
     """Brave Web Search API (`/res/v1/web/search`)."""
 
     name = "brave"
@@ -35,7 +36,15 @@ class BraveProvider:
         domain_filter=False,
     )
 
-    def __init__(self, config: BraveProviderConfig | None = None, *, http: ProviderHttpClient | None = None):
+    def __init__(
+        self,
+        config: BraveProviderConfig | None = None,
+        *,
+        http: ProviderHttpClient | None = None,
+        fetch_context: FetchContext | None = None,
+        pdf_semaphore: Any = None,
+    ):
+        super().__init__(fetch_context=fetch_context, pdf_semaphore=pdf_semaphore)
         if config is None:
             raise ProviderConfigError("Brave API key is required.", code="missing_api_key", provider="brave")
         key = (config.api_key or "").strip()

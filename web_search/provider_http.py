@@ -304,6 +304,7 @@ class ProviderHttpClient:
     def _parse_json_response(self, resp: ProviderHttpResponse, *, provider: str | None) -> Any:
         from web_search.providers.errors import (
             ProviderAuthError,
+            ProviderBillingError,
             ProviderRateLimitError,
             ProviderResponseError,
             ProviderUnavailableError,
@@ -313,6 +314,11 @@ class ProviderHttpClient:
         if resp.status in {401, 403}:
             raise ProviderAuthError(
                 "Provider authentication failed.",
+                provider=provider,
+            )
+        if resp.status in {402, 432, 433}:
+            raise ProviderBillingError(
+                "Provider billing or plan limit failure.",
                 provider=provider,
             )
         if resp.status == 429:

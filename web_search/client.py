@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import re
-from typing import Optional
-from urllib.parse import urlparse
-
 from web_search.config import (
     MAX_COMPRESSED_BYTES,
     MAX_DECOMPRESSED_BYTES,
@@ -17,20 +13,32 @@ from web_search.config import (
     PDF_MAX_CHARS,
     PDF_MAX_PAGES,
 )
-from web_search.content import looks_like_html, looks_like_html_document
-from web_search.html import html_to_markdown, truncate
-from web_search.http import fetch_raw
 from web_search.models import (
     ErrorCategory,
     FetchResult,
     SearchRequest,
     SearchResponse,
 )
-from web_search.providers.base import SearchProvider
+from web_search.providers.base import (
+    GITHUB_README_HEADERS,
+    BaseProvider,
+    FetchContext,
+    SearchProvider,
+    process_fetched_body,
+)
+
+# Re-exports used by tests and callers.
+__all__ = [
+    "WebSearchClient",
+    "format_fetch_result",
+    "format_search_response",
+    "process_fetched_body",
+]
 from web_search.providers.brave import BraveProviderConfig
 from web_search.providers.ddgs import DdgsProviderConfig
 from web_search.providers.errors import (
     ProviderAuthError,
+    ProviderBillingError,
     ProviderError,
     ProviderImportError,
     ProviderRateLimitError,
@@ -45,33 +53,12 @@ from web_search.providers.searxng import SearxngProviderConfig
 from web_search.providers.tavily import TavilyProviderConfig
 from web_search.settings import AppSettings, ProviderSettings
 
-_GITHUB_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
-_GITHUB_NON_OWNER_SEGMENTS = {
-    "features",
-    "pricing",
-    "about",
-    "contact",
-    "login",
-    "signup",
-    "topics",
-    "trending",
-    "explore",
-    "marketplace",
-    "settings",
-    "notifications",
-    "issues",
-    "pulls",
-    "discussions",
-}
+# Backward-compatible alias for tests/docs that import the old name.
+_GITHUB_README_HEADERS = GITHUB_README_HEADERS
 
 _SEARCH_FOOTER = (
     "\n\n---\n\nIMPORTANT: These are short snippets only. Call fetch(url) with a specific URL to get full page content."
 )
-
-_GITHUB_README_HEADERS = {
-    "Accept": "application/vnd.github.raw+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-}
 
 
 def format_search_response(response: SearchResponse) -> str:
@@ -98,47 +85,6 @@ def format_fetch_result(result: FetchResult) -> str:
     return result.content
 
 
-def process_fetched_body(
-    body: str,
-    content_type: str,
-    *,
-    max_page_chars: int,
-    base_url: str | None = None,
-    prefix: str = "",
-    include_links: bool = True,
-    include_images: bool = False,
-    min_main_content_chars: int = MIN_MAIN_CONTENT_CHARS,
-    output_format: str = "markdown",
-) -> tuple[str, bool]:
-    """Shared body pipeline for ordinary fetch and GitHub README shortcut.
-
-    Returns ``(rendered_text, truncated)``.
-    """
-    if "html" not in (content_type or "") and not looks_like_html(body):
-        text = body.strip()
-    else:
-        text = html_to_markdown(
-            body,
-            main_content=True,
-            base_url=base_url,
-            include_links=include_links,
-            include_images=include_images,
-            min_main_content_chars=min_main_content_chars,
-            output_format=output_format,
-        )
-        if not text.strip() and body.strip():
-            # Fallback if converter yields empty but raw body is non-empty HTML-ish.
-            text = body.strip()
-
-    if prefix:
-        text = f"{prefix}{text}"
-
-    pre_len = len(text)
-    rendered = truncate(text, max_page_chars)
-    truncated = pre_len > max_page_chars
-    return rendered, truncated
-
-
 def _provider_error_to_response(exc: ProviderError) -> tuple[str, str]:
     """Map provider exceptions to (ErrorCategory, public error_message)."""
     msg = sanitize_provider_message(exc.message or str(exc))
@@ -152,11 +98,81 @@ def _provider_error_to_response(exc: ProviderError) -> tuple[str, str]:
         category = ErrorCategory.TIMEOUT
     elif isinstance(exc, ProviderUnavailableError):
         category = ErrorCategory.UNAVAILABLE
+    elif isinstance(exc, ProviderBillingError):
+        category = ErrorCategory.PROVIDER
     else:
         category = ErrorCategory.PROVIDER
     if msg.startswith("Search failed:") or msg.startswith("Error:"):
         return category, msg
     return category, f"Search failed: {msg}"
+
+
+def _provider_error_to_fetch(exc: ProviderError) -> tuple[str, str]:
+    """Map provider exceptions raised during fetch to public fetch errors."""
+    msg = sanitize_provider_message(exc.message or str(exc))
+    if isinstance(exc, ProviderAuthError):
+        category = ErrorCategory.AUTH
+    elif isinstance(exc, ProviderRateLimitError):
+        category = ErrorCategory.RATE_LIMIT
+    elif isinstance(exc, ProviderTimeoutError):
+        category = ErrorCategory.TIMEOUT
+    elif isinstance(exc, ProviderUnavailableError):
+        category = ErrorCategory.UNAVAILABLE
+    elif isinstance(exc, ProviderBillingError):
+        category = ErrorCategory.PROVIDER
+    else:
+        category = ErrorCategory.PROVIDER
+    if msg.startswith("Fetch failed:") or msg.startswith("Error:"):
+        return category, msg
+    return category, f"Fetch failed: {msg}"
+
+
+def _fetch_context_from_settings(settings: AppSettings) -> FetchContext:
+    f = settings.fetch
+    e = settings.extraction
+    return FetchContext(
+        timeout_seconds=float(f.timeout_seconds),
+        max_bytes=int(f.max_bytes),
+        max_pdf_bytes=int(f.max_pdf_bytes),
+        max_redirects=int(f.max_redirects),
+        max_compressed_bytes=int(f.max_compressed_bytes),
+        max_decompressed_bytes=int(f.max_decompressed_bytes),
+        pdf_max_pages=int(f.pdf_max_pages),
+        pdf_max_chars=int(f.pdf_max_chars),
+        allow_http=bool(f.allow_http),
+        allowed_ports=frozenset(f.allowed_ports or ()),
+        max_page_chars=int(e.max_page_chars),
+        min_main_content_chars=int(e.min_main_content_chars),
+        include_links=bool(e.include_links),
+        include_images=bool(e.include_images),
+        output_format=e.output_format,
+        native_fetch=bool(getattr(f, "native_fetch", True)),
+    )
+
+
+def _legacy_fetch_context(
+    *,
+    timeout: int,
+    max_page_chars: int,
+) -> FetchContext:
+    return FetchContext(
+        timeout_seconds=float(timeout),
+        max_bytes=MAX_FETCH_BYTES,
+        max_pdf_bytes=MAX_PDF_FETCH_BYTES,
+        max_redirects=MAX_REDIRECTS,
+        max_compressed_bytes=MAX_COMPRESSED_BYTES,
+        max_decompressed_bytes=MAX_DECOMPRESSED_BYTES,
+        pdf_max_pages=PDF_MAX_PAGES,
+        pdf_max_chars=PDF_MAX_CHARS,
+        allow_http=True,
+        allowed_ports=frozenset(),
+        max_page_chars=max_page_chars,
+        min_main_content_chars=MIN_MAIN_CONTENT_CHARS,
+        include_links=True,
+        include_images=False,
+        output_format="markdown",
+        native_fetch=True,
+    )
 
 
 class WebSearchClient:
@@ -168,6 +184,9 @@ class WebSearchClient:
     Prefer ``WebSearchClient(settings=AppSettings.from_env())`` for runtime
     configuration. Legacy ``max_results`` / ``timeout`` / ``max_page_chars``
     kwargs remain supported and map search+fetch to the shared timeout.
+
+    Fetch is owned by the primary search provider (``BaseProvider.fetch``).
+    Tavily/Exa may use native extract when configured with an API key.
     """
 
     def __init__(
@@ -188,43 +207,39 @@ class WebSearchClient:
             self.max_page_chars = settings.extraction.max_page_chars
             self._search_timeout = float(settings.provider.timeout_seconds)
             self._fetch_timeout = float(settings.fetch.timeout_seconds)
-            self._max_fetch_bytes = settings.fetch.max_bytes
-            self._max_pdf_fetch_bytes = settings.fetch.max_pdf_bytes
-            self._max_redirects = int(settings.fetch.max_redirects)
-            self._max_compressed_bytes = int(settings.fetch.max_compressed_bytes)
-            self._max_decompressed_bytes = int(settings.fetch.max_decompressed_bytes)
-            self._pdf_max_pages = int(settings.fetch.pdf_max_pages)
-            self._pdf_max_chars = int(settings.fetch.pdf_max_chars)
-            self._fetch_allow_http = bool(settings.fetch.allow_http)
-            self._fetch_allowed_ports = frozenset(settings.fetch.allowed_ports or ())
-            self._include_links = bool(settings.extraction.include_links)
-            self._include_images = bool(settings.extraction.include_images)
-            self._min_main_content_chars = int(settings.extraction.min_main_content_chars)
-            self._output_format = settings.extraction.output_format
+            self._fetch_context = _fetch_context_from_settings(settings)
             if provider is not None:
+                self._primary_provider = provider
+                if isinstance(provider, BaseProvider):
+                    provider._fetch_context = self._fetch_context
+                    provider._pdf_semaphore = pdf_semaphore
                 self._provider = provider
             else:
-                self._provider = _provider_from_settings(settings)
+                self._primary_provider, self._provider = _providers_from_settings(
+                    settings,
+                    fetch_context=self._fetch_context,
+                    pdf_semaphore=pdf_semaphore,
+                )
         else:
             self.max_results = max_results
             self.timeout = timeout
             self.max_page_chars = max_page_chars
             self._search_timeout = float(timeout)
             self._fetch_timeout = float(timeout)
-            self._max_fetch_bytes = MAX_FETCH_BYTES
-            self._max_pdf_fetch_bytes = MAX_PDF_FETCH_BYTES
-            self._max_redirects = MAX_REDIRECTS
-            self._max_compressed_bytes = MAX_COMPRESSED_BYTES
-            self._max_decompressed_bytes = MAX_DECOMPRESSED_BYTES
-            self._pdf_max_pages = PDF_MAX_PAGES
-            self._pdf_max_chars = PDF_MAX_CHARS
-            self._fetch_allow_http = True
-            self._fetch_allowed_ports = frozenset()
-            self._include_links = True
-            self._include_images = False
-            self._min_main_content_chars = MIN_MAIN_CONTENT_CHARS
-            self._output_format = "markdown"
-            self._provider = provider if provider is not None else get_default_provider(timeout=timeout)
+            self._fetch_context = _legacy_fetch_context(timeout=timeout, max_page_chars=max_page_chars)
+            if provider is not None:
+                self._primary_provider = provider
+                if isinstance(provider, BaseProvider):
+                    provider._fetch_context = self._fetch_context
+                    provider._pdf_semaphore = pdf_semaphore
+                self._provider = provider
+            else:
+                self._primary_provider = get_default_provider(
+                    timeout=timeout,
+                    fetch_context=self._fetch_context,
+                    pdf_semaphore=pdf_semaphore,
+                )
+                self._provider = self._primary_provider
 
     def search(self, query: str) -> str:
         return format_search_response(self.search_structured(query))
@@ -268,153 +283,75 @@ class WebSearchClient:
         return SearchResponse(request=request, results=tuple(results or ()))
 
     def fetch_structured(self, url: str) -> FetchResult:
-        """Internal structured fetch; public ``fetch()`` formats this to ``str``."""
+        """Internal structured fetch; public ``fetch()`` formats this to ``str``.
+
+        Delegates to the primary provider's ``fetch`` (generic by default;
+        Tavily/Exa may override with native extract).
+        """
         url = (url or "").strip()
         if not url:
             return FetchResult.failure(url, "No URL provided.", ErrorCategory.EMPTY_INPUT)
-
-        fetch_timeout = self._fetch_timeout
-        max_bytes = self._max_fetch_bytes
-        max_pdf = self._max_pdf_fetch_bytes
-
-        readme_url = self._github_readme_api_url(url)
-        if readme_url:
-            gh = fetch_raw(
-                readme_url,
-                fetch_timeout,
-                max_bytes,
-                max_pdf,
-                extra_headers=dict(_GITHUB_README_HEADERS),
-                pdf_semaphore=self._pdf_semaphore,
-                **self._fetch_kwargs(),
-            )
-            if gh.ok and gh.content.strip():
-                # GitHub raw README may be Markdown or HTML document.
-                body = gh.content
-                ct = gh.content_type
-                if looks_like_html_document(body):
-                    rendered, truncated = process_fetched_body(
-                        body,
-                        "text/html",
-                        max_page_chars=self.max_page_chars,
-                        base_url=url,
-                        prefix=f"README of {url} (via GitHub API):\n\n",
-                        **self._extraction_kwargs(),
-                    )
-                else:
-                    # Preserve Markdown/plain README text with prefix, then truncate.
-                    text = f"README of {url} (via GitHub API):\n\n{body.strip()}"
-                    pre_len = len(text)
-                    rendered = truncate(text, self.max_page_chars)
-                    truncated = pre_len > self.max_page_chars
-                if rendered.strip():
-                    return FetchResult.success(
-                        url,
-                        rendered,
-                        final_url=gh.final_url or readme_url,
-                        content_type=ct or "text/plain",
-                        status_code=gh.status_code,
-                        bytes_read=gh.bytes_read,
-                        redirect_count=gh.redirect_count,
-                        truncated=truncated,
-                    )
-
-        raw = fetch_raw(
-            url,
-            fetch_timeout,
-            max_bytes,
-            max_pdf,
-            pdf_semaphore=self._pdf_semaphore,
-            **self._fetch_kwargs(),
-        )
-        if not raw.ok:
+        try:
+            return self._primary_provider.fetch(url)
+        except ProviderError as e:
+            category, message = _provider_error_to_fetch(e)
+            return FetchResult.failure(url, message, category)
+        except Exception as e:
             return FetchResult.failure(
                 url,
-                raw.error_message or "Fetch failed",
-                raw.error_category or ErrorCategory.UNKNOWN,
-                final_url=raw.final_url,
-                content_type=raw.content_type,
-                status_code=raw.status_code,
-                bytes_read=raw.bytes_read,
-                redirect_count=raw.redirect_count,
-                overflow=raw.overflow,
+                f"Fetch failed: {sanitize_provider_message(str(e))}",
+                ErrorCategory.UNKNOWN,
             )
 
-        rendered, truncated = process_fetched_body(
-            raw.content,
-            raw.content_type,
-            max_page_chars=self.max_page_chars,
-            base_url=raw.final_url or url,
-            **self._extraction_kwargs(),
-        )
-        return FetchResult.success(
-            url,
-            rendered,
-            final_url=raw.final_url or url,
-            content_type=raw.content_type,
-            status_code=raw.status_code,
-            bytes_read=raw.bytes_read,
-            redirect_count=raw.redirect_count,
-            truncated=truncated,
-            overflow=raw.overflow,
-        )
 
-    def _fetch_kwargs(self) -> dict:
-        ports = self._fetch_allowed_ports or None
-        return {
-            "max_compressed_bytes": self._max_compressed_bytes,
-            "max_decompressed_bytes": self._max_decompressed_bytes,
-            "pdf_max_pages": self._pdf_max_pages,
-            "pdf_max_chars": self._pdf_max_chars,
-            "max_redirects": self._max_redirects,
-            "allow_http": self._fetch_allow_http,
-            "allowed_ports": ports if ports else None,
-        }
-
-    def _extraction_kwargs(self) -> dict:
-        return {
-            "include_links": self._include_links,
-            "include_images": self._include_images,
-            "min_main_content_chars": self._min_main_content_chars,
-            "output_format": self._output_format,
-        }
-
-    def _github_readme_api_url(self, url: str) -> Optional[str]:
-        parsed = urlparse(url)
-        host = (parsed.hostname or "").lower().lstrip("www.")
-        if host != "github.com":
-            return None
-        parts = [p for p in parsed.path.split("/") if p]
-        if len(parts) != 2:
-            return None
-        owner, repo = parts
-        if owner.lower() in _GITHUB_NON_OWNER_SEGMENTS:
-            return None
-        if repo.endswith(".git"):
-            repo = repo[:-4]
-        if not (_GITHUB_NAME_RE.match(owner) and _GITHUB_NAME_RE.match(repo)):
-            return None
-        return f"https://api.github.com/repos/{owner}/{repo}/readme"
-
-
-def _provider_from_settings(settings: AppSettings) -> SearchProvider:
+def _providers_from_settings(
+    settings: AppSettings,
+    *,
+    fetch_context: FetchContext,
+    pdf_semaphore=None,
+) -> tuple[SearchProvider, SearchProvider]:
+    """Return ``(primary, search_provider)`` where search_provider may be a fallback chain."""
     name = (settings.provider.name or "ddgs").strip().lower()
-    primary = _single_provider_from_settings(name, settings.provider)
+    primary = _single_provider_from_settings(
+        name,
+        settings.provider,
+        fetch_context=fetch_context,
+        pdf_semaphore=pdf_semaphore,
+    )
     fallbacks: list[SearchProvider] = []
     seen = {name}
     for raw in settings.provider.fallback_providers:
         fb = (raw or "").strip().lower()
         if not fb or fb in seen:
             continue
-        fallbacks.append(_single_provider_from_settings(fb, settings.provider))
+        fallbacks.append(
+            _single_provider_from_settings(
+                fb,
+                settings.provider,
+                fetch_context=fetch_context,
+                pdf_semaphore=pdf_semaphore,
+            )
+        )
         seen.add(fb)
     if not fallbacks:
-        return primary
-    return FallbackSearchProvider([primary, *fallbacks])
+        return primary, primary
+    chain = FallbackSearchProvider(
+        [primary, *fallbacks],
+        fetch_context=fetch_context,
+        pdf_semaphore=pdf_semaphore,
+    )
+    return primary, chain
 
 
-def _single_provider_from_settings(name: str, p: ProviderSettings) -> SearchProvider:
+def _single_provider_from_settings(
+    name: str,
+    p: ProviderSettings,
+    *,
+    fetch_context: FetchContext,
+    pdf_semaphore=None,
+) -> SearchProvider:
     ep = p.endpoint(name)
+    kwargs = {"fetch_context": fetch_context, "pdf_semaphore": pdf_semaphore}
     if name == "ddgs":
         return create_provider(
             "ddgs",
@@ -422,6 +359,7 @@ def _single_provider_from_settings(name: str, p: ProviderSettings) -> SearchProv
                 timeout=int(p.timeout_seconds),
                 allow_unsupported_filters=p.allow_unsupported_filters,
             ),
+            **kwargs,
         )
     if name == "searxng":
         return create_provider(
@@ -435,6 +373,7 @@ def _single_provider_from_settings(name: str, p: ProviderSettings) -> SearchProv
                 retry_max=int(p.retry_max),
                 retry_backoff_seconds=float(p.retry_backoff_seconds),
             ),
+            **kwargs,
         )
     if name == "brave":
         return create_provider(
@@ -448,6 +387,7 @@ def _single_provider_from_settings(name: str, p: ProviderSettings) -> SearchProv
                 retry_max=int(p.retry_max),
                 retry_backoff_seconds=float(p.retry_backoff_seconds),
             ),
+            **kwargs,
         )
     if name == "tavily":
         return create_provider(
@@ -461,6 +401,7 @@ def _single_provider_from_settings(name: str, p: ProviderSettings) -> SearchProv
                 retry_max=int(p.retry_max),
                 retry_backoff_seconds=float(p.retry_backoff_seconds),
             ),
+            **kwargs,
         )
     if name == "exa":
         return create_provider(
@@ -474,5 +415,6 @@ def _single_provider_from_settings(name: str, p: ProviderSettings) -> SearchProv
                 retry_max=int(p.retry_max),
                 retry_backoff_seconds=float(p.retry_backoff_seconds),
             ),
+            **kwargs,
         )
-    return create_provider(name, None)
+    return create_provider(name, None, **kwargs)

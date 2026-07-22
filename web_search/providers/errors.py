@@ -87,6 +87,19 @@ class ProviderImportError(ProviderError):
         super().__init__(message, code=code, **kw)
 
 
+class ProviderBillingError(ProviderError):
+    """Insufficient credits, plan limits, or payment required."""
+
+    def __init__(
+        self,
+        message: str = "Provider billing or plan limit failure.",
+        *,
+        code: str = "billing_error",
+        **kw: Any,
+    ):
+        super().__init__(message, code=code, **kw)
+
+
 def sanitize_provider_message(message: str) -> str:
     """Strip likely secrets from a provider error message."""
     from web_search.provider_http import redact_secrets

@@ -261,6 +261,8 @@ class FetchSettings:
     allow_http: bool = True
     # Empty frozenset = any port 1..65535 (subject to URL validation).
     allowed_ports: frozenset[int] = frozenset()
+    # When True (default), Tavily/Exa may use paid exact-URL extraction for fetch.
+    native_fetch: bool = True
 
 
 @dataclass(frozen=True)
@@ -505,6 +507,7 @@ class AppSettings:
                 pdf_max_chars=_get_int(env, "PDF_MAX_CHARS", PDF_MAX_CHARS, min_value=1),
                 allow_http=_get_bool(env, "FETCH_ALLOW_HTTP", True),
                 allowed_ports=_parse_ports(_get_optional_str(env, "FETCH_ALLOWED_PORTS"), key="FETCH_ALLOWED_PORTS"),
+                native_fetch=_get_bool(env, "PROVIDER_NATIVE_FETCH", True),
             ),
             extraction=ExtractionSettings(
                 max_page_chars=_get_int(env, "PAGE_MAX_CHARS", MAX_PAGE_CHARS, min_value=1),

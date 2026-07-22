@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
+from urllib.parse import urlparse
 
-from web_search.models import SearchRequest, SearchResult
+from web_search.models import ErrorCategory, FetchResult, SearchRequest, SearchResult
 from web_search.provider_http import ProviderHttpClient, ProviderHttpConfig
-from web_search.providers.base import ProviderCapabilities, validate_request_capabilities
-from web_search.providers.errors import ProviderConfigError, ProviderResponseError
+from web_search.providers.base import BaseProvider, FetchContext, ProviderCapabilities, validate_request_capabilities
+from web_search.providers.errors import (
+    ProviderAuthError,
+    ProviderBillingError,
+    ProviderConfigError,
+    ProviderError,
+    ProviderRateLimitError,
+    ProviderResponseError,
+    sanitize_provider_message,
+)
 
 _DEFAULT_TAVILY_BASE = "https://api.tavily.com"
 
@@ -23,8 +33,8 @@ class TavilyProviderConfig:
     retry_backoff_seconds: float = 0.5
 
 
-class TavilyProvider:
-    """Tavily Search API (`POST /search`)."""
+class TavilyProvider(BaseProvider):
+    """Tavily Search API (`POST /search`) + optional exact-URL extract (`POST /extract`)."""
 
     name = "tavily"
     capabilities = ProviderCapabilities(
@@ -35,7 +45,15 @@ class TavilyProvider:
         domain_filter=False,
     )
 
-    def __init__(self, config: TavilyProviderConfig | None = None, *, http: ProviderHttpClient | None = None):
+    def __init__(
+        self,
+        config: TavilyProviderConfig | None = None,
+        *,
+        http: ProviderHttpClient | None = None,
+        fetch_context: FetchContext | None = None,
+        pdf_semaphore: Any = None,
+    ):
+        super().__init__(fetch_context=fetch_context, pdf_semaphore=pdf_semaphore)
         if config is None:
             raise ProviderConfigError("Tavily API key is required.", code="missing_api_key", provider="tavily")
         key = (config.api_key or "").strip()
@@ -113,6 +131,101 @@ class TavilyProvider:
             if len(out) >= count:
                 break
         return out
+
+    def fetch(self, url: str) -> FetchResult:
+        url = (url or "").strip()
+        if not url:
+            return FetchResult.failure(url, "No URL provided.", ErrorCategory.EMPTY_INPUT)
+        if not self._fetch_context.native_fetch or not (self.config.api_key or "").strip():
+            return super().fetch(url)
+
+        blocked = self.validate_url_for_provider(url)
+        if blocked is not None:
+            return blocked
+
+        try:
+            extracted = self._extract_url(url)
+        except (ProviderAuthError, ProviderConfigError, ProviderBillingError, ProviderRateLimitError) as e:
+            return _fetch_provider_failure(url, e)
+        except ProviderError:
+            return super().fetch(url)
+
+        if extracted is not None:
+            return extracted
+        return super().fetch(url)
+
+    def _extract_url(self, url: str) -> FetchResult | None:
+        """POST /extract for one URL. Returns success result, or None for URL-level failure."""
+        body: dict[str, object] = {
+            "urls": [url],
+            "format": "markdown",
+            "extract_depth": "basic",
+            "include_images": False,
+        }
+        payload = self._http.post_json("/extract", json_body=body, provider=self.name)
+        if payload is None:
+            raise ProviderResponseError("Provider returned no payload.", provider=self.name)
+        if not isinstance(payload, dict):
+            raise ProviderResponseError("Provider returned non-object JSON.", provider=self.name)
+
+        results = payload.get("results")
+        failed = payload.get("failed_results")
+        if results is not None and not isinstance(results, list):
+            raise ProviderResponseError("Provider results field is not a list.", provider=self.name)
+        if failed is not None and not isinstance(failed, list):
+            raise ProviderResponseError("Provider failed_results field is not a list.", provider=self.name)
+
+        for row in results or []:
+            if not isinstance(row, dict):
+                continue
+            row_url = str(row.get("url", "") or "")
+            if row_url and not _urls_match(row_url, url):
+                # Prefer exact match when multiple; still accept first if only one.
+                if len(results or []) > 1:
+                    continue
+            content = str(row.get("raw_content", "") or "")
+            if content.strip():
+                return self.truncate_native_content(
+                    url,
+                    content,
+                    final_url=row_url or url,
+                    content_type="text/markdown",
+                )
+
+        # URL-level failure when listed in failed_results or empty successful payload.
+        for row in failed or []:
+            if not isinstance(row, dict):
+                continue
+            row_url = str(row.get("url", "") or "")
+            if not row_url or _urls_match(row_url, url):
+                return None
+        if not results and not failed:
+            raise ProviderResponseError("Provider extract response missing results.", provider=self.name)
+        return None
+
+
+def _urls_match(a: str, b: str) -> bool:
+    pa, pb = urlparse(a.strip()), urlparse(b.strip())
+    host_a = (pa.hostname or "").lower().lstrip("www.")
+    host_b = (pb.hostname or "").lower().lstrip("www.")
+    path_a = (pa.path or "/").rstrip("/") or "/"
+    path_b = (pb.path or "/").rstrip("/") or "/"
+    return host_a == host_b and path_a == path_b
+
+
+def _fetch_provider_failure(url: str, exc: ProviderError) -> FetchResult:
+    msg = sanitize_provider_message(exc.message or str(exc))
+    if isinstance(exc, ProviderAuthError):
+        category = ErrorCategory.AUTH
+    elif isinstance(exc, ProviderRateLimitError):
+        category = ErrorCategory.RATE_LIMIT
+    elif isinstance(exc, ProviderBillingError):
+        category = ErrorCategory.PROVIDER
+    else:
+        category = ErrorCategory.PROVIDER
+    if not msg.startswith("Fetch failed:"):
+        msg = f"Fetch failed: {msg}"
+    return FetchResult.failure(url, msg, category)
 
 
 def _map_tavily_safe_search(value: str | None) -> bool | None:

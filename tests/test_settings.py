@@ -306,14 +306,19 @@ def test_client_wires_fetch_and_extraction_flags():
         }
     )
     c = WebSearchClient(settings=s)
-    assert c._max_redirects == 2
-    assert c._fetch_allow_http is False
-    assert c._fetch_allowed_ports == frozenset({443})
-    assert c._include_links is False
-    assert c._include_images is True
-    assert c._output_format == "text"
-    assert c._min_main_content_chars == 33
-    assert c._pdf_max_pages == 7
+    ctx = c._fetch_context
+    assert ctx.max_redirects == 2
+    assert ctx.allow_http is False
+    assert ctx.allowed_ports == frozenset({443})
+    assert ctx.include_links is False
+    assert ctx.include_images is True
+    assert ctx.output_format == "text"
+    assert ctx.min_main_content_chars == 33
+    assert ctx.pdf_max_pages == 7
+    primary = c._primary_provider
+    assert primary._fetch_context.max_redirects == 2
+    assert primary._fetch_kwargs()["allowed_ports"] == frozenset({443})
+    assert primary._extraction_kwargs()["include_images"] is True
 
 
 def test_invalid_allowed_ports():

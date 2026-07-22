@@ -128,7 +128,7 @@ That's it — simple, focused, and reliable.
 └────────────┘                     └──────────────────────┘
 ```
 
-Outbound data flow: **search** → configured provider (default DuckDuckGo via `ddgs`); **fetch** → target URL / GitHub API for README shortcuts. Provider secrets never ride the page-fetch path.
+Outbound data flow: **search** → configured provider (default DuckDuckGo via `ddgs`); **fetch** → primary provider (`BaseProvider.fetch`, generic SSRF-safe by default). With `SEARCH_PROVIDER=tavily|exa` and `PROVIDER_NATIVE_FETCH=true` (default), `web_fetch` may call Tavily `/extract` or Exa `/contents` (credits apply) before falling back to generic fetch. Provider API secrets never ride the target page-fetch path; native extract sends only the URL as JSON to the provider origin.
 
 ### Module Structure
 
@@ -323,6 +323,7 @@ The Python programming language...
 | `SEARCH_PROVIDER`        | `ddgs`            | Server-wide search provider (**allowlisted**; not settable per tool call) |
 | `SEARCH_MAX_RESULTS`     | `5`               | Max search results returned                                          |
 | `SEARCH_TIMEOUT_SECONDS` | `30`              | Search timeout (seconds)                                             |
+| `PROVIDER_NATIVE_FETCH`   | `true`            | Tavily/Exa may use paid extract/contents for `web_fetch`               |
 | `FETCH_TIMEOUT_SECONDS`  | `30`              | Page fetch timeout (seconds)                                         |
 | `SEARCH_TIMEOUT`         | (alias)             | **Deprecated**: if set and specific timeouts omit, maps to both |
 | `SEARCH_FALLBACK_PROVIDERS` | (empty)          | Comma-separated allowlisted fallbacks after primary (no config/auth fallback) |
