@@ -610,7 +610,7 @@ Server này đặc biệt phù hợp cho Agentic AI vì:
 ### Lưu ý về mạng
 
 - Bind `127.0.0.1` mặc định. Chỉ `MCP_HOST=0.0.0.0` khi cố ý expose (ví dụ Docker); non-loopback emit `UserWarning`.
-- **0.2.0 chưa có auth tích hợp** — không expose MCP HTTP công khai nếu không có reverse proxy (hoặc auth sau này). Ưu tiên `stdio` hoặc loopback + client local.
+- **Bearer auth tùy chọn** cho HTTP/SSE: `MCP_AUTH_MODE=bearer` + `MCP_BEARER_TOKEN`. Client gửi `Authorization: Bearer <token>`. STDIO không dùng token. Ưu tiên loopback + client local, hoặc reverse proxy khi expose production.
 - Search và fetch luôn tạo **lưu lượng ra ngoài** (provider + site đích). Không phải search offline air-gapped.
 - Docker Compose cô lập process trong mạng container; image vẫn có thể bind `0.0.0.0` trong container để publish port.
 
@@ -722,16 +722,16 @@ Giải pháp này đơn giản hơn và miễn phí, nhưng không cung cấp re
 
 ### Hỏi: Có thể thêm xác thực không?
 
-**0.2.0 chưa có bearer auth tích hợp.** Không expose MCP HTTP công khai nếu không có reverse proxy (hoặc đợi release sau có auth). Ví dụ nginx basic auth:
+Có — cho **streamable-http / SSE**:
 
-```nginx
-location /mcp {
-    auth_basic "MCP Server";
-    auth_basic_user_file /etc/nginx/.htpasswd;
-    proxy_pass http://localhost:8787/mcp;
-}
+```bash
+export MCP_AUTH_MODE=bearer
+export MCP_BEARER_TOKEN='a-long-random-secret'
 ```
 
+Client phải gửi `Authorization: Bearer <token>`. Token sai/thiếu → **401**, không echo secret. STDIO bỏ qua bearer (tin cậy process-local). Vẫn có thể đặt reverse proxy phía trước và để `MCP_AUTH_MODE=none`.
+
+Giới hạn body tùy chọn: `MCP_MAX_REQUEST_BODY_BYTES=1048576`.
 ### Hỏi: Hỗ trợ những giao thức transport nào?
 
 - **streamable-http** (khuyến nghị, mặc định) — tiêu chuẩn MCP hiện đại

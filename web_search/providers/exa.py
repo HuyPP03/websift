@@ -91,12 +91,7 @@ class ExaProvider:
                 continue
             title = str(row.get("title", "") or "")
             url = str(row.get("url", "") or "")
-            snippet = str(
-                row.get("text", "")
-                or row.get("snippet", "")
-                or row.get("highlights", "")
-                or ""
-            )
+            snippet = str(row.get("text", "") or row.get("snippet", "") or row.get("highlights", "") or "")
             if isinstance(row.get("highlights"), list):
                 snippet = " ".join(str(x) for x in row["highlights"] if x)
             out.append(

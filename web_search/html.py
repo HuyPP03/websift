@@ -233,9 +233,7 @@ def _convert_flow(nodes: Iterable, *, base_url: str | None, NavigableString, opt
         if not inline_buf:
             return
         text = _normalize_inline(
-            _render_inline_nodes(
-                inline_buf, base_url=base_url, NavigableString=NavigableString, opts=opts
-            )
+            _render_inline_nodes(inline_buf, base_url=base_url, NavigableString=NavigableString, opts=opts)
         )
         inline_buf.clear()
         if text:
@@ -263,17 +261,13 @@ def _convert_block(el, *, base_url: str | None, NavigableString, opts: HtmlRende
     if name in ("h1", "h2", "h3", "h4", "h5", "h6"):
         level = int(name[1])
         text = _normalize_inline(
-            _render_inline_nodes(
-                el.children, base_url=base_url, NavigableString=NavigableString, opts=opts
-            )
+            _render_inline_nodes(el.children, base_url=base_url, NavigableString=NavigableString, opts=opts)
         )
         return [f"{'#' * level} {text}"] if text else []
 
     if name == "p":
         text = _normalize_inline(
-            _render_inline_nodes(
-                el.children, base_url=base_url, NavigableString=NavigableString, opts=opts
-            )
+            _render_inline_nodes(el.children, base_url=base_url, NavigableString=NavigableString, opts=opts)
         )
         return [text] if text else []
 
@@ -330,9 +324,7 @@ def _convert_block(el, *, base_url: str | None, NavigableString, opts: HtmlRende
 
     if name in ("dt", "dd"):
         text = _normalize_inline(
-            _render_inline_nodes(
-                el.children, base_url=base_url, NavigableString=NavigableString, opts=opts
-            )
+            _render_inline_nodes(el.children, base_url=base_url, NavigableString=NavigableString, opts=opts)
         )
         if not text:
             return []

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from mcp.server.fastmcp import FastMCP
 
+from web_search.auth import install_http_guards, mcp_auth_kwargs
 from web_search.client import WebSearchClient
 from web_search.concurrency import WorkLimits
 from web_search.logging_config import configure_logging, log_fetch, log_search
@@ -94,11 +95,14 @@ def create_server(
         # Attach limiter when caller injects a client without one.
         client._pdf_semaphore = work.pdf_semaphore  # noqa: SLF001 — intentional wiring
 
+    auth_kwargs = mcp_auth_kwargs(settings)
     mcp = FastMCP(
         "web-search",
         host=settings.server.host,
         port=settings.server.port,
+        **auth_kwargs,
     )
+    install_http_guards(mcp, settings)
 
     @mcp.tool()
     async def web_search(query: str) -> str:

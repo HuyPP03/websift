@@ -587,7 +587,7 @@ This server is particularly well-suited for agentic AI because:
 ### Network Considerations
 
 - Binds to `127.0.0.1` by default. Set `MCP_HOST=0.0.0.0` only when intentionally exposing (e.g. Docker); a `UserWarning` is emitted for non-loopback binds.
-- **No built-in auth in 0.2.0** — remote HTTP/SSE MCP is **not** safe to expose on a public interface without a reverse proxy (or future bearer auth). Prefer `stdio` or loopback + local clients.
+- **Optional bearer auth** for remote HTTP/SSE: set `MCP_AUTH_MODE=bearer` and `MCP_BEARER_TOKEN`. Clients send `Authorization: Bearer <token>`. STDIO does not use the token. Prefer loopback + local clients, or a reverse proxy, for production exposure.
 - Search and fetch always generate **outbound** traffic (provider + target sites). This is not an air-gapped offline search engine.
 - Docker Compose isolates the process in a container network; the image may still bind `0.0.0.0` inside the container for port publishing.
 
@@ -614,6 +614,7 @@ websift/
 └── web_search/
     ├── __init__.py         # WebSearchClient, __version__
     ├── settings.py         # Typed AppSettings
+    ├── auth.py             # Bearer token + body limit guards
     ├── concurrency.py      # WorkLimits
     ├── models.py           # Structured internals
     ├── config.py           # Constants
@@ -704,16 +705,16 @@ This is simpler and free, but doesn't offer JS rendering, deep scraping, or sema
 
 ### Q: Can I add authentication?
 
-**0.2.0 has no built-in bearer auth.** Do not expose remote MCP HTTP publicly without a reverse proxy (or wait for a later release with auth). Example with nginx basic auth:
+Yes — for **streamable-http / SSE**:
 
-```nginx
-location /mcp {
-    auth_basic "MCP Server";
-    auth_basic_user_file /etc/nginx/.htpasswd;
-    proxy_pass http://localhost:8787/mcp;
-}
+```bash
+export MCP_AUTH_MODE=bearer
+export MCP_BEARER_TOKEN='a-long-random-secret'
 ```
 
+Clients must send `Authorization: Bearer <token>`. Missing/invalid tokens get **401** without echoing the secret. STDIO ignores bearer (process-local trust). You can still put a reverse proxy in front (nginx basic auth, mTLS, etc.) and leave `MCP_AUTH_MODE=none`.
+
+Optional body cap: `MCP_MAX_REQUEST_BODY_BYTES=1048576`.
 ### Q: What transport protocols are supported?
 
 - **streamable-http** (recommended, default) — modern MCP standard
