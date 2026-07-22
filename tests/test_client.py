@@ -131,7 +131,7 @@ class TestFetch:
     def test_github_readme_shortcut(self, monkeypatch: pytest.MonkeyPatch):
         calls: list[tuple] = []
 
-        def fake_fetch(url, timeout, max_b, max_pdf, extra_headers=None):
+        def fake_fetch(url, timeout, max_b, max_pdf, extra_headers=None, **kwargs):
             calls.append((url, extra_headers))
             if "api.github.com" in url:
                 return FetchResult.success(url, "# Repo\n\nHello", content_type="text/plain", status_code=200)
@@ -171,7 +171,7 @@ class TestFetch:
         assert "truncated" in out
 
     def test_github_readme_fallback_to_page_when_api_empty(self, monkeypatch: pytest.MonkeyPatch):
-        def fake_fetch(url, timeout, max_b, max_pdf, extra_headers=None):
+        def fake_fetch(url, timeout, max_b, max_pdf, extra_headers=None, **kwargs):
             if "api.github.com" in url:
                 return FetchResult.success(url, "   ", content_type="text/plain")
             return FetchResult.success(url, "html-page", content_type="text/plain")

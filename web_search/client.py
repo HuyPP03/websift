@@ -150,8 +150,10 @@ class WebSearchClient:
         max_page_chars: int = MAX_PAGE_CHARS,
         provider: SearchProvider | None = None,
         settings: AppSettings | None = None,
+        pdf_semaphore=None,
     ):
         self._settings = settings
+        self._pdf_semaphore = pdf_semaphore
         if settings is not None:
             self.max_results = settings.provider.max_results
             # Public attribute kept for compatibility; equals search timeout.
@@ -236,6 +238,7 @@ class WebSearchClient:
                 max_bytes,
                 max_pdf,
                 extra_headers=dict(_GITHUB_README_HEADERS),
+                pdf_semaphore=self._pdf_semaphore,
             )
             if gh.ok and gh.content.strip():
                 # GitHub raw README may be Markdown or HTML document.
@@ -267,7 +270,13 @@ class WebSearchClient:
                         truncated=truncated,
                     )
 
-        raw = fetch_raw(url, fetch_timeout, max_bytes, max_pdf)
+        raw = fetch_raw(
+            url,
+            fetch_timeout,
+            max_bytes,
+            max_pdf,
+            pdf_semaphore=self._pdf_semaphore,
+        )
         if not raw.ok:
             return FetchResult.failure(
                 url,

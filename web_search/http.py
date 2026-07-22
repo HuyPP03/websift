@@ -216,8 +216,24 @@ def extract_pdf_text(
     *,
     max_pages: int = PDF_MAX_PAGES,
     max_chars: int = PDF_MAX_CHARS,
+    pdf_semaphore=None,
 ) -> str:
-    """Extract text with pypdf only; limits pages and characters."""
+    """Extract text with pypdf only; limits pages and characters.
+
+    Optional ``pdf_semaphore`` (threading semaphore) bounds concurrent PDF parses.
+    """
+    if pdf_semaphore is not None:
+        with pdf_semaphore:
+            return _extract_pdf_text_unlocked(raw, max_pages=max_pages, max_chars=max_chars)
+    return _extract_pdf_text_unlocked(raw, max_pages=max_pages, max_chars=max_chars)
+
+
+def _extract_pdf_text_unlocked(
+    raw: bytes,
+    *,
+    max_pages: int,
+    max_chars: int,
+) -> str:
     try:
         import pypdf
     except ImportError:
@@ -296,6 +312,7 @@ def fetch_raw(
     max_decompressed_bytes: int = MAX_DECOMPRESSED_BYTES,
     pdf_max_pages: int = PDF_MAX_PAGES,
     pdf_max_chars: int = PDF_MAX_CHARS,
+    pdf_semaphore=None,
 ) -> FetchResult:
     """Fetch URL with SSRF protection, DNS pinning, redirect following, body limits.
 
@@ -521,7 +538,12 @@ def fetch_raw(
                     overflow=True,
                     nbytes=len(raw_bytes),
                 )
-            pdf_text = extract_pdf_text(raw_bytes, max_pages=pdf_max_pages, max_chars=pdf_max_chars)
+            pdf_text = extract_pdf_text(
+                raw_bytes,
+                max_pages=pdf_max_pages,
+                max_chars=pdf_max_chars,
+                pdf_semaphore=pdf_semaphore,
+            )
             content = pdf_text or "(PDF contains no extractable text)"
             return FetchResult.success(
                 requested,

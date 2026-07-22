@@ -16,7 +16,7 @@ def test_github_shortcut_does_not_attach_provider_secrets(monkeypatch):
     """GitHub fetch only gets Accept / API-version — never Authorization."""
     calls: list[dict | None] = []
 
-    def fake_fetch(url, timeout, max_b, max_pdf, extra_headers=None):
+    def fake_fetch(url, timeout, max_b, max_pdf, extra_headers=None, **kwargs):
         calls.append(extra_headers)
         if "api.github.com" in url:
             return FetchResult.success(url, "# Hello\n", content_type="text/plain", status_code=200)
