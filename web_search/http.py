@@ -1,23 +1,48 @@
-"""HTTP helpers: redirect suppression, SNI handler, body reader, PDF extractor."""
+"""HTTP helpers: pinned fetch, redirects, body limits, compression, charset, PDF."""
 
 from __future__ import annotations
 
+import codecs
+import gzip
 import http.client
+import io
 import random
 import re
 import socket
 import ssl
 import urllib.error
 import urllib.request
+import zlib
 from typing import Optional
 from urllib.parse import urljoin, urlparse, urlunparse
 
-from web_search.config import MAX_REDIRECTS, UNICODE_BOM_CODECS, USER_AGENTS
+from web_search.config import (
+    MAX_COMPRESSED_BYTES,
+    MAX_DECOMPRESSED_BYTES,
+    MAX_REDIRECTS,
+    PDF_MAX_CHARS,
+    PDF_MAX_PAGES,
+    SUPPORTED_CONTENT_ENCODINGS,
+    UNICODE_BOM_CODECS,
+    USER_AGENTS,
+)
 from web_search.content import has_binary_magic, has_pdf_magic, is_text_mime, looks_binary
 from web_search.security import resolve_host, validate_http_url
 
-
 _REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
+
+_META_CHARSET_RE = re.compile(
+    rb'(?is)<meta[^>]+charset\s*=\s*[\'"]?\s*([a-zA-Z0-9_\-:]+)',
+)
+_META_HTTP_EQUIV_RE = re.compile(
+    rb'(?is)<meta[^>]+http-equiv\s*=\s*[\'"]?content-type[\'"]?[^>]*'
+    rb'content\s*=\s*[\'"][^\'"]*charset\s*=\s*([a-zA-Z0-9_\-:]+)',
+)
+# Alternate attribute order: content before http-equiv
+_META_HTTP_EQUIV_RE2 = re.compile(
+    rb'(?is)<meta[^>]+content\s*=\s*[\'"][^\'"]*charset\s*=\s*([a-zA-Z0-9_\-:]+)[^\'"]*[\'"][^>]*'
+    rb'http-equiv\s*=\s*[\'"]?content-type',
+)
 
 
 class _NoRedirect(urllib.request.HTTPErrorProcessor):
@@ -30,8 +55,7 @@ class _NoRedirect(urllib.request.HTTPErrorProcessor):
 
 
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
-    """HTTPS connection to a pinned IP that presents the real hostname for SNI
-    and certificate validation."""
+    """HTTPS connection to a pinned IP with real hostname for SNI/cert validation."""
 
     def __init__(self, host, sni_hostname: str, **kw):
         kw.pop("context", None)
@@ -56,43 +80,172 @@ class _SNIHTTPSHandler(urllib.request.HTTPSHandler):
         )
 
 
-def read_capped_body(resp, limit: int, chunk: int = 65536) -> tuple[Optional[str], bytes]:
+def read_capped_body(
+    resp,
+    limit: int,
+    chunk: int = 65536,
+) -> tuple[Optional[str], bytes, bool]:
+    """Read at most ``limit + 1`` bytes.
+
+    Returns ``(error, data, overflow)``.
+    If overflow, ``data`` is truncated to ``limit`` and ``overflow`` is True.
+    """
+    if limit < 0:
+        return "Invalid read limit.", b"", False
+
+    max_read = limit + 1
     chunks: list[bytes] = []
     total = 0
     try:
-        while True:
-            data = resp.read(min(chunk, limit - total))
+        while total < max_read:
+            data = resp.read(min(chunk, max_read - total))
             if not data:
                 break
             chunks.append(data)
             total += len(data)
-            if total >= limit:
-                break
-    except Exception as e:
-        return f"Failed to read response body: {e}", b""
-    return None, b"".join(chunks)
+    except (OSError, http.client.HTTPException, ValueError) as e:
+        return f"Failed to read response body: {e}", b"", False
+
+    raw = b"".join(chunks)
+    if total > limit:
+        return None, raw[:limit], True
+    return None, raw, False
 
 
-def extract_pdf_text(raw: bytes) -> str:
+def _codec_exists(name: str) -> bool:
     try:
-        import io
+        codecs.lookup(name)
+        return True
+    except LookupError:
+        return False
 
+
+def detect_charset(raw: bytes, http_charset: str | None) -> str:
+    """BOM → valid HTTP charset → HTML meta → UTF-8."""
+    for bom, codec in UNICODE_BOM_CODECS:
+        if raw.startswith(bom):
+            return codec
+
+    if http_charset:
+        cs = http_charset.strip().strip("\"'")
+        if cs and _codec_exists(cs):
+            return cs
+
+    probe = raw[:8192]
+    for pattern in (_META_CHARSET_RE, _META_HTTP_EQUIV_RE, _META_HTTP_EQUIV_RE2):
+        m = pattern.search(probe)
+        if not m:
+            continue
+        name = m.group(1).decode("ascii", "ignore").strip()
+        if name and _codec_exists(name):
+            return name
+
+    return "utf-8"
+
+
+def decompress_body(
+    raw: bytes,
+    content_encoding: str | None,
+    max_decompressed: int = MAX_DECOMPRESSED_BYTES,
+) -> tuple[Optional[str], bytes]:
+    """Apply Content-Encoding (gzip/deflate) with a decompressed size cap."""
+    if not content_encoding:
+        return None, raw
+
+    encodings = [e.strip().lower() for e in content_encoding.split(",") if e.strip()]
+    if not encodings or encodings == ["identity"]:
+        return None, raw
+
+    for enc in encodings:
+        if enc not in SUPPORTED_CONTENT_ENCODINGS:
+            return f"Unsupported Content-Encoding: {enc}", b""
+
+    data = raw
+    # Content-Encoding is listed in the order applied; decode in reverse.
+    for enc in reversed(encodings):
+        if enc in ("", "identity"):
+            continue
+        try:
+            if enc in ("gzip", "x-gzip"):
+                data = _gzip_decompress_bounded(data, max_decompressed)
+            elif enc == "deflate":
+                data = _deflate_decompress_bounded(data, max_decompressed)
+        except (EOFError, OSError, zlib.error, gzip.BadGzipFile, ValueError) as e:
+            return f"Failed to decompress response body: {e}", b""
+
+        if len(data) > max_decompressed:
+            return f"(decompressed content exceeds limit of {max_decompressed} bytes)", b""
+
+    return None, data
+
+
+def _gzip_decompress_bounded(data: bytes, max_out: int) -> bytes:
+    with gzip.GzipFile(fileobj=io.BytesIO(data), mode="rb") as gf:
+        out = gf.read(max_out + 1)
+    if len(out) > max_out:
+        raise ValueError(f"decompressed size exceeds {max_out} bytes")
+    return out
+
+
+def _deflate_decompress_bounded(data: bytes, max_out: int) -> bytes:
+    # Some servers send zlib-wrapped DEFLATE; others raw DEFLATE.
+    for wbits in (zlib.MAX_WBITS, -zlib.MAX_WBITS):
+        try:
+            dec = zlib.decompressobj(wbits)
+            out = dec.decompress(data, max_out + 1)
+            if len(out) > max_out:
+                raise ValueError(f"decompressed size exceeds {max_out} bytes")
+            # Reject if unused compressed input remains (likely truncated / bomb).
+            if dec.unconsumed_tail:
+                raise ValueError(f"decompressed size exceeds {max_out} bytes")
+            # Ensure stream is finished (or flush yields nothing more within budget).
+            tail = dec.flush()
+            if tail:
+                if len(out) + len(tail) > max_out:
+                    raise ValueError(f"decompressed size exceeds {max_out} bytes")
+                out = out + tail
+            return out
+        except zlib.error:
+            continue
+    raise zlib.error("invalid deflate data")
+
+
+def extract_pdf_text(
+    raw: bytes,
+    *,
+    max_pages: int = PDF_MAX_PAGES,
+    max_chars: int = PDF_MAX_CHARS,
+) -> str:
+    """Extract text with pypdf only; limits pages and characters."""
+    try:
         import pypdf
+    except ImportError:
+        return ""
 
-        reader = pypdf.PdfReader(io.BytesIO(raw))
-        text = "\n".join(page.extract_text() or "" for page in reader.pages).strip()
-        if text:
-            return text
-    except Exception:
-        pass
     try:
-        import io
-        from pdfminer.high_level import extract_text as pm_extract
-
-        return (pm_extract(io.BytesIO(raw)) or "").strip()
+        reader = pypdf.PdfReader(io.BytesIO(raw))
+        parts: list[str] = []
+        total = 0
+        for i, page in enumerate(reader.pages):
+            if i >= max_pages:
+                break
+            piece = page.extract_text() or ""
+            if not piece:
+                continue
+            remain = max_chars - total
+            if remain <= 0:
+                break
+            if len(piece) > remain:
+                parts.append(piece[:remain])
+                total = max_chars
+                break
+            parts.append(piece)
+            total += len(piece)
+        # Join can add separators; clamp so max_chars is a hard cap.
+        return "\n".join(parts).strip()[:max_chars]
     except Exception:
-        pass
-    return ""
+        # pypdf parse failures → empty (caller shows friendly message)
+        return ""
 
 
 def _close_quiet(resp) -> None:
@@ -111,12 +264,24 @@ def _response_status(resp) -> int:
 
 
 def _pinned_netloc(port: int, scheme: str, pinned_ip: str) -> str:
-    """Build netloc for a connection to pinned_ip while preserving non-default ports."""
     ip_str = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
     default = 443 if scheme == "https" else 80
     if port == default:
         return ip_str
     return f"{ip_str}:{port}"
+
+
+def _content_length(headers) -> int | None:
+    raw = headers.get("Content-Length") if headers is not None else None
+    if raw is None:
+        return None
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    if value < 0:
+        return None
+    return value
 
 
 def fetch_raw(
@@ -125,13 +290,17 @@ def fetch_raw(
     max_fetch_bytes: int,
     max_pdf_fetch_bytes: int,
     extra_headers: Optional[dict] = None,
+    *,
+    max_compressed_bytes: int = MAX_COMPRESSED_BYTES,
+    max_decompressed_bytes: int = MAX_DECOMPRESSED_BYTES,
+    pdf_max_pages: int = PDF_MAX_PAGES,
+    pdf_max_chars: int = PDF_MAX_CHARS,
 ) -> tuple[Optional[str], str, str]:
-    """Fetch URL with SSRF protection, DNS pinning, redirect following."""
+    """Fetch URL with SSRF protection, DNS pinning, redirect following, body limits."""
     ok, reason, validated = validate_http_url(url)
     if not ok or validated is None:
         return reason, "", ""
 
-    # Literal IPs already checked in validate_http_url; still resolve hostnames.
     ok, reason, pinned_ip = resolve_host(validated.hostname, validated.port)
     if not ok:
         return reason, "", ""
@@ -143,13 +312,19 @@ def fetch_raw(
         current_scheme = validated.scheme
         ua = random.choice(USER_AGENTS)
 
+        content_type = ""
+        declared_enc: str | None = None
+        content_encoding: str | None = None
+        raw_bytes = b""
+        declared_pdf = False
+
         for _ in range(MAX_REDIRECTS):
             cp = urlparse(current_url)
             ip_netloc = _pinned_netloc(current_port, current_scheme, pinned_ip)
             pinned_url = urlunparse(cp._replace(netloc=ip_netloc, scheme=current_scheme))
 
             opener = urllib.request.build_opener(_NoRedirect, _SNIHTTPSHandler(current_host))
-            headers = {"User-Agent": ua, "Host": current_host}
+            headers = {"User-Agent": ua, "Host": current_host, "Accept-Encoding": "gzip, deflate"}
             if extra_headers:
                 headers.update(extra_headers)
 
@@ -194,24 +369,58 @@ def fetch_raw(
                     return f"Failed to fetch URL: HTTP {status}", "", ""
 
                 content_type = (
-                    (resp.headers.get_content_type() or "").lower()
-                    if resp.headers.get("Content-Type")
-                    else ""
+                    (resp.headers.get_content_type() or "").lower() if resp.headers.get("Content-Type") else ""
                 )
                 declared_enc = resp.headers.get_content_charset()
+                ce_header = resp.headers.get("Content-Encoding")
+                content_encoding = ce_header.strip() if ce_header else None
                 declared_pdf = content_type == "application/pdf"
-                read_limit = max_pdf_fetch_bytes + 1 if declared_pdf else max_fetch_bytes
-                err, raw_bytes = read_capped_body(resp, read_limit)
+
+                # Compressed wire budget vs logical body budget.
+                wire_limit = (
+                    max_compressed_bytes
+                    if content_encoding
+                    else (max_pdf_fetch_bytes if declared_pdf else max_fetch_bytes)
+                )
+                # Always enforce the tighter of wire_limit and type-specific download caps.
+                if declared_pdf:
+                    wire_limit = min(wire_limit, max_pdf_fetch_bytes)
+                elif not content_encoding:
+                    wire_limit = min(wire_limit, max_fetch_bytes)
+
+                cl = _content_length(resp.headers)
+                if cl is not None and cl > wire_limit:
+                    _close_quiet(resp)
+                    return f"(content exceeds download limit of {wire_limit} bytes)", "", content_type
+
+                err, raw_bytes, overflow = read_capped_body(resp, wire_limit)
                 if err:
                     _close_quiet(resp)
                     return err, "", ""
+                if overflow:
+                    _close_quiet(resp)
+                    return f"(content exceeds download limit of {wire_limit} bytes)", "", content_type
 
-                if not declared_pdf and len(raw_bytes) == max_fetch_bytes and has_pdf_magic(raw_bytes):
-                    err2, tail = read_capped_body(resp, max_pdf_fetch_bytes - max_fetch_bytes + 1)
+                # Sniff PDF after partial read when not declared.
+                if (
+                    not declared_pdf
+                    and not content_encoding
+                    and has_pdf_magic(raw_bytes)
+                    and len(raw_bytes) == wire_limit
+                    and max_pdf_fetch_bytes > wire_limit
+                ):
+                    # Already at normal limit with PDF magic — would need larger cap; re-fetch not done.
+                    # If we still have stream capacity, try reading more up to pdf limit.
+                    extra_limit = max_pdf_fetch_bytes - len(raw_bytes)
+                    err2, tail, overflow2 = read_capped_body(resp, extra_limit)
                     if err2:
                         _close_quiet(resp)
                         return err2, "", ""
-                    raw_bytes += tail
+                    raw_bytes = raw_bytes + tail
+                    if overflow2 or len(raw_bytes) > max_pdf_fetch_bytes:
+                        _close_quiet(resp)
+                        return f"(content exceeds download limit of {max_pdf_fetch_bytes} bytes)", "", content_type
+                    declared_pdf = True
 
                 _close_quiet(resp)
                 resp = None
@@ -221,12 +430,22 @@ def fetch_raw(
         else:
             return "Failed to fetch: too many redirects.", "", ""
 
+        # Decompress if needed (before PDF/binary sniff on payload).
+        if content_encoding:
+            derr, raw_bytes = decompress_body(raw_bytes, content_encoding, max_decompressed_bytes)
+            if derr is not None:
+                return derr, "", content_type
+
         is_pdf = declared_pdf or has_pdf_magic(raw_bytes)
         if is_pdf:
             if len(raw_bytes) > max_pdf_fetch_bytes:
-                return "(PDF exceeds download limit)", "", content_type
-            pdf_text = extract_pdf_text(raw_bytes)
+                return "(PDF exceeds download limit)", "", content_type or "application/pdf"
+            pdf_text = extract_pdf_text(raw_bytes, max_pages=pdf_max_pages, max_chars=pdf_max_chars)
             return None, pdf_text or "(PDF contains no extractable text)", "application/pdf"
+
+        # After decompression, enforce normal page byte budget for non-PDF.
+        if len(raw_bytes) > max_fetch_bytes:
+            return f"(content exceeds download limit of {max_fetch_bytes} bytes)", "", content_type
 
         if content_type and not is_text_mime(content_type):
             m = re.match(r"[\w.+-]+/[\w.+-]+", content_type)
@@ -235,12 +454,18 @@ def fetch_raw(
         if has_binary_magic(raw_bytes):
             return f"(binary content, {len(raw_bytes)} bytes)", "", content_type
 
-        bom_codec = next((c for bom, c in UNICODE_BOM_CODECS if raw_bytes.startswith(bom)), None)
-        # Phase 2 will enforce BOM → HTTP → meta → utf-8. Keep prior order for now.
-        text = raw_bytes.decode(declared_enc or bom_codec or "utf-8", errors="replace")
+        charset = detect_charset(raw_bytes, declared_enc)
+        try:
+            text = raw_bytes.decode(charset, errors="replace")
+        except (LookupError, ValueError):
+            text = raw_bytes.decode("utf-8", errors="replace")
 
         if looks_binary(text):
-            if declared_enc in (None, "iso8859-1"):
+            if charset.lower() in ("utf-8", "utf-8-sig", "iso8859-1", "latin-1", "iso-8859-1") or declared_enc in (
+                None,
+                "iso8859-1",
+                "iso-8859-1",
+            ):
                 alt = raw_bytes.decode("cp1252", "replace")
                 if not looks_binary(alt):
                     text = alt
@@ -253,5 +478,10 @@ def fetch_raw(
 
     except urllib.error.HTTPError as e:
         return f"Failed to fetch URL: HTTP {e.code} {getattr(e, 'reason', '')}", "", ""
-    except Exception as e:
+    except urllib.error.URLError as e:
+        reason_txt = getattr(e, "reason", e)
+        return f"Failed to fetch URL: {reason_txt}", "", ""
+    except (TimeoutError, socket.timeout) as e:
+        return f"Failed to fetch URL: timeout ({e})", "", ""
+    except OSError as e:
         return f"Failed to fetch URL: {e}", "", ""

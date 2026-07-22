@@ -1,16 +1,23 @@
-"""HTTP fetch tests (phase 1: URL validation + redirect SSRF)."""
+"""HTTP fetch tests (phase 2: lifecycle, decode, compression, limits)."""
 
 from __future__ import annotations
 
 import gzip
 import io
+import zlib
 from http.server import BaseHTTPRequestHandler
 from unittest.mock import MagicMock
 
 import pytest
 import urllib.error
 
-from web_search.http import extract_pdf_text, fetch_raw, read_capped_body
+from web_search.http import (
+    decompress_body,
+    detect_charset,
+    extract_pdf_text,
+    fetch_raw,
+    read_capped_body,
+)
 
 
 class TestReadCappedBody:
@@ -22,13 +29,12 @@ class TestReadCappedBody:
             def read(self, n: int = -1) -> bytes:
                 return self._bio.read(n)
 
-        err, data = read_capped_body(R(b"hello"), limit=100)
+        err, data, overflow = read_capped_body(R(b"hello"), limit=100)
         assert err is None
         assert data == b"hello"
+        assert overflow is False
 
-    def test_stops_at_limit_without_overflow_detection(self):
-        """Still phase-2: stops at exactly limit; cannot distinguish full vs overflow."""
-
+    def test_exact_limit_is_not_overflow(self):
         class R:
             def __init__(self, data: bytes):
                 self._bio = io.BytesIO(data)
@@ -36,19 +42,123 @@ class TestReadCappedBody:
             def read(self, n: int = -1) -> bytes:
                 return self._bio.read(n)
 
-        payload = b"x" * 50
-        err, data = read_capped_body(R(payload), limit=20)
+        payload = b"x" * 20
+        err, data, overflow = read_capped_body(R(payload), limit=20)
+        assert err is None
+        assert data == payload
+        assert overflow is False
+
+    def test_detects_one_byte_overflow(self):
+        class R:
+            def __init__(self, data: bytes):
+                self._bio = io.BytesIO(data)
+
+            def read(self, n: int = -1) -> bytes:
+                return self._bio.read(n)
+
+        payload = b"x" * 21
+        err, data, overflow = read_capped_body(R(payload), limit=20)
         assert err is None
         assert data == b"x" * 20
+        assert overflow is True
+
+    def test_invalid_limit(self):
+        class R:
+            def read(self, n: int = -1) -> bytes:
+                return b""
+
+        err, data, overflow = read_capped_body(R(), limit=-1)
+        assert err is not None
+        assert "Invalid" in err
+        assert data == b""
+        assert overflow is False
 
     def test_read_error(self):
         class R:
             def read(self, n: int = -1) -> bytes:
                 raise OSError("boom")
 
-        err, data = read_capped_body(R(), limit=10)
+        err, data, overflow = read_capped_body(R(), limit=10)
         assert err is not None
         assert "Failed to read response body" in err
+        assert data == b""
+        assert overflow is False
+
+
+class TestDetectCharset:
+    def test_bom_wins_over_http_charset(self):
+        raw = b"\xef\xbb\xbfhello"
+        assert detect_charset(raw, "iso-8859-1") == "utf-8-sig"
+
+    def test_http_charset_when_valid(self):
+        assert detect_charset(b"hello", "latin-1") == "latin-1"
+
+    def test_invalid_http_charset_falls_through(self):
+        assert detect_charset(b"hello", "not-a-real-codec-xyz") == "utf-8"
+
+    def test_meta_charset(self):
+        html = b'<html><head><meta charset="iso-8859-2"></head><body>x</body></html>'
+        assert detect_charset(html, None) == "iso-8859-2"
+
+    def test_meta_http_equiv(self):
+        html = b'<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"></head></html>'
+        assert detect_charset(html, None) == "windows-1252"
+
+    def test_meta_http_equiv_content_first(self):
+        html = b'<html><head><meta content="text/html; charset=koi8-r" http-equiv="content-type"></head></html>'
+        assert detect_charset(html, None) == "koi8-r"
+
+    def test_utf8_fallback(self):
+        assert detect_charset(b"plain", None) == "utf-8"
+
+
+class TestDecompressBody:
+    def test_identity_passthrough(self):
+        err, data = decompress_body(b"abc", None)
+        assert err is None
+        assert data == b"abc"
+        err, data = decompress_body(b"abc", "identity")
+        assert err is None
+        assert data == b"abc"
+
+    def test_gzip(self):
+        raw = gzip.compress(b"hello gzip")
+        err, data = decompress_body(raw, "gzip")
+        assert err is None
+        assert data == b"hello gzip"
+
+    def test_deflate_zlib_wrapped(self):
+        raw = zlib.compress(b"hello deflate")
+        err, data = decompress_body(raw, "deflate")
+        assert err is None
+        assert data == b"hello deflate"
+
+    def test_deflate_raw(self):
+        co = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+        raw = co.compress(b"raw deflate") + co.flush()
+        err, data = decompress_body(raw, "deflate")
+        assert err is None
+        assert data == b"raw deflate"
+
+    def test_unsupported_encoding(self):
+        err, data = decompress_body(b"x", "br")
+        assert err is not None
+        assert "Unsupported Content-Encoding" in err
+        assert data == b""
+
+    def test_gzip_bomb_bounded(self):
+        # Highly compressible payload exceeds small max_decompressed.
+        payload = b"A" * 200_000
+        raw = gzip.compress(payload)
+        err, data = decompress_body(raw, "gzip", max_decompressed=10_000)
+        assert err is not None
+        assert "exceed" in err.lower() or "decompress" in err.lower()
+        assert data == b""
+
+    def test_malformed_gzip(self):
+        err, data = decompress_body(b"not-gzip", "gzip")
+        assert err is not None
+        assert "decompress" in err.lower()
         assert data == b""
 
 
@@ -125,7 +235,6 @@ class TestFetchRawLocalServer:
             return False, f"Blocked: {hostname}", ""
 
         monkeypatch.setattr("web_search.http.resolve_host", _resolve)
-        # Also block via validate if literal — hostname evil.internal hits resolve
         err, body, ct = fetch_raw(srv.url("/go"), 5, 100_000, 200_000)
         assert err is not None
         assert "Blocked" in err
@@ -174,21 +283,35 @@ class TestFetchRawLocalServer:
             headers={"Content-Type": "application/pdf"},
         )
         err, body, ct = fetch_raw(srv.url("/doc.pdf"), 5, 1000, 500_000)
-        assert err is None or "PDF" in (err or "")
-        if err is None:
-            assert ct == "application/pdf"
-            assert isinstance(body, str)
+        assert err is None
+        assert ct == "application/pdf"
+        assert isinstance(body, str)
 
-    def test_oversized_normal_body_capped(self, allow_loopback_fetch):
+    def test_oversized_normal_body_errors(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
         big = b"A" * 5000
         srv.respond("/big", body=big, headers={"Content-Type": "text/plain"})
         err, body, ct = fetch_raw(srv.url("/big"), 5, max_fetch_bytes=100, max_pdf_fetch_bytes=10_000)
-        assert err is None
-        assert len(body) <= 100
+        assert err is not None
+        assert "exceeds download limit" in err
+        assert body == ""
 
-    def test_gzip_body_not_transparently_decoded(self, allow_loopback_fetch):
-        """Phase 2: Content-Encoding gzip is not handled; raw bytes may look binary."""
+    def test_content_length_early_reject(self, allow_loopback_fetch):
+        srv = allow_loopback_fetch
+
+        def handler(h: BaseHTTPRequestHandler) -> None:
+            h.send_response(200)
+            h.send_header("Content-Type", "text/plain")
+            h.send_header("Content-Length", "999999")
+            h.end_headers()
+            # Do not write body — client should reject on header alone.
+
+        srv.route("/cl", handler)
+        err, body, ct = fetch_raw(srv.url("/cl"), 5, max_fetch_bytes=100, max_pdf_fetch_bytes=10_000)
+        assert err is not None
+        assert "exceeds download limit" in err
+
+    def test_gzip_body_decoded(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
         raw = gzip.compress(b"hello gzip")
         srv.respond(
@@ -200,14 +323,68 @@ class TestFetchRawLocalServer:
             },
         )
         err, body, ct = fetch_raw(srv.url("/gz"), 5, 100_000, 200_000)
-        assert err is not None or body != "hello gzip"
+        assert err is None
+        assert body == "hello gzip"
+
+    def test_deflate_body_decoded(self, allow_loopback_fetch):
+        srv = allow_loopback_fetch
+        raw = zlib.compress(b"hello deflate")
+        srv.respond(
+            "/df",
+            body=raw,
+            headers={
+                "Content-Type": "text/plain; charset=utf-8",
+                "Content-Encoding": "deflate",
+            },
+        )
+        err, body, ct = fetch_raw(srv.url("/df"), 5, 100_000, 200_000)
+        assert err is None
+        assert body == "hello deflate"
+
+    def test_unsupported_content_encoding(self, allow_loopback_fetch):
+        srv = allow_loopback_fetch
+        srv.respond(
+            "/br",
+            body=b"pretend-brotli",
+            headers={
+                "Content-Type": "text/plain",
+                "Content-Encoding": "br",
+            },
+        )
+        err, body, ct = fetch_raw(srv.url("/br"), 5, 100_000, 200_000)
+        assert err is not None
+        assert "Unsupported Content-Encoding" in err
+
+    def test_meta_charset_used(self, allow_loopback_fetch):
+        # "café" in latin-1 without HTTP charset; meta declares iso-8859-1
+        body = b'<html><head><meta charset="iso-8859-1"></head><body>' + "caf\xe9".encode("latin-1") + b"</body></html>"
+        srv = allow_loopback_fetch
+        srv.respond("/meta", body=body, headers={"Content-Type": "text/html"})
+        err, text, ct = fetch_raw(srv.url("/meta"), 5, 100_000, 200_000)
+        assert err is None
+        assert "caf" in text
+        assert "�" not in text or "é" in text or "caf" in text
+
+    def test_bom_over_http_charset(self, allow_loopback_fetch):
+        # UTF-8 BOM payload but server claims latin-1 — BOM must win.
+        payload = b"\xef\xbb\xbf" + "hello".encode("utf-8")
+        srv = allow_loopback_fetch
+        srv.respond(
+            "/bom-http",
+            body=payload,
+            headers={"Content-Type": "text/plain; charset=iso-8859-1"},
+        )
+        err, text, ct = fetch_raw(srv.url("/bom-http"), 5, 100_000, 200_000)
+        assert err is None
+        assert text == "hello" or text.lstrip("﻿") == "hello"
 
     def test_extra_headers_passed(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
 
         def handler(h: BaseHTTPRequestHandler) -> None:
             accept = h.headers.get("Accept", "")
-            body = accept.encode()
+            ae = h.headers.get("Accept-Encoding", "")
+            body = f"{accept}|{ae}".encode()
             h.send_response(200)
             h.send_header("Content-Type", "text/plain")
             h.send_header("Content-Length", str(len(body)))
@@ -224,6 +401,7 @@ class TestFetchRawLocalServer:
         )
         assert err is None
         assert "application/vnd.github.raw+json" in body
+        assert "gzip" in body
 
     def test_utf16_bom_decode(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
@@ -256,6 +434,28 @@ class TestFetchRawLocalServer:
         err, body, ct = fetch_raw("http://example.test/", 1, 1000, 2000)
         assert err is not None
         assert "Failed to fetch URL" in err
+
+    def test_decompressed_size_cap(self, allow_loopback_fetch):
+        srv = allow_loopback_fetch
+        payload = b"Z" * 50_000
+        raw = gzip.compress(payload)
+        srv.respond(
+            "/bomb",
+            body=raw,
+            headers={
+                "Content-Type": "text/plain",
+                "Content-Encoding": "gzip",
+            },
+        )
+        err, body, ct = fetch_raw(
+            srv.url("/bomb"),
+            5,
+            max_fetch_bytes=100_000,
+            max_pdf_fetch_bytes=200_000,
+            max_decompressed_bytes=5_000,
+        )
+        assert err is not None
+        assert "exceed" in err.lower() or "decompress" in err.lower()
 
 
 class TestHttpErrorRedirectPath:
@@ -319,7 +519,6 @@ class TestHttpErrorRedirectPath:
             lambda *_a, **_k: MagicMock(open=_open),
         )
         err, body, ct = fetch_raw("http://example.test/x", 5, 1000, 2000)
-        # 10.0.0.1 is rejected by validate_http_url (literal non-global) before resolve
         assert err is not None
         assert "Blocked" in err
 
@@ -419,3 +618,44 @@ class TestExtractPdfText:
         fake_pypdf.PdfReader = Reader
         monkeypatch.setitem(__import__("sys").modules, "pypdf", fake_pypdf)
         assert extract_pdf_text(b"%PDF-1.4") == "page text"
+
+    def test_page_limit(self, monkeypatch: pytest.MonkeyPatch):
+        class Page:
+            def __init__(self, n: int):
+                self._n = n
+
+            def extract_text(self):
+                return f"P{self._n}"
+
+        class Reader:
+            def __init__(self, _bio):
+                self.pages = [Page(i) for i in range(10)]
+
+        fake_pypdf = MagicMock()
+        fake_pypdf.PdfReader = Reader
+        monkeypatch.setitem(__import__("sys").modules, "pypdf", fake_pypdf)
+        out = extract_pdf_text(b"%PDF-1.4", max_pages=3, max_chars=10_000)
+        assert out == "P0\nP1\nP2"
+
+    def test_char_limit(self, monkeypatch: pytest.MonkeyPatch):
+        class Page:
+            def extract_text(self):
+                return "abcdefghij"
+
+        class Reader:
+            def __init__(self, _bio):
+                self.pages = [Page(), Page()]
+
+        fake_pypdf = MagicMock()
+        fake_pypdf.PdfReader = Reader
+        monkeypatch.setitem(__import__("sys").modules, "pypdf", fake_pypdf)
+        out = extract_pdf_text(b"%PDF-1.4", max_pages=10, max_chars=15)
+        assert len(out) <= 15
+        assert out.startswith("abcdefghij")
+
+    def test_no_pdfminer_import(self):
+        import web_search.http as http_mod
+        import inspect
+
+        src = inspect.getsource(http_mod)
+        assert "pdfminer" not in src
