@@ -24,10 +24,7 @@ def looks_binary(text: str, threshold: float = 0.02) -> bool:
     """Heuristic: high ratio of control/replacement chars -> binary."""
     if not text:
         return False
-    ctrl = sum(
-        1 for ch in text
-        if ch == "�" or (ord(ch) < 32 and ch not in "\t\n\r")
-    )
+    ctrl = sum(1 for ch in text if ch == "�" or (ord(ch) < 32 and ch not in "\t\n\r"))
     return ctrl / len(text) > threshold
 
 

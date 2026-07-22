@@ -164,66 +164,67 @@ class TestDecompressBody:
 
 class TestFetchRawValidation:
     def test_blocks_non_http_scheme(self):
-        err, body, ct = fetch_raw("file:///etc/passwd", 5, 1000, 2000)
-        assert err is not None
-        assert "only http/https" in err
-        assert body == ""
+        result = fetch_raw("file:///etc/passwd", 5, 1000, 2000)
+        assert not result.ok
+        assert "only http/https" in (result.error_message or "")
+        assert result.content == ""
 
     def test_blocks_missing_hostname(self):
-        err, body, ct = fetch_raw("http:///nohost", 5, 1000, 2000)
-        assert err is not None
-        assert "hostname" in err.lower()
+        result = fetch_raw("http:///nohost", 5, 1000, 2000)
+        assert not result.ok
+        assert "hostname" in (result.error_message or "").lower()
 
     def test_blocks_userinfo(self):
-        err, body, ct = fetch_raw("https://user:secret@example.com/", 5, 1000, 2000)
-        assert err is not None
-        assert "credential" in err.lower()
+        result = fetch_raw("https://user:secret@example.com/", 5, 1000, 2000)
+        assert not result.ok
+        assert "credential" in (result.error_message or "").lower()
 
     def test_blocks_malformed_port(self):
-        err, body, ct = fetch_raw("https://example.com:notaport/", 5, 1000, 2000)
-        assert err is not None
-        assert "port" in err.lower()
+        result = fetch_raw("https://example.com:notaport/", 5, 1000, 2000)
+        assert not result.ok
+        assert "port" in (result.error_message or "").lower()
 
     def test_blocks_loopback_literal_without_dns(self):
-        err, body, ct = fetch_raw("http://127.0.0.1:9/", 5, 1000, 2000)
-        assert err is not None
-        assert "non-global" in err.lower() or "Blocked" in err
+        result = fetch_raw("http://127.0.0.1:9/", 5, 1000, 2000)
+        assert not result.ok
+        assert "non-global" in (result.error_message or "").lower() or "Blocked" in (result.error_message or "")
 
     def test_blocks_private_dns(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
             "web_search.http.resolve_host",
             lambda host, port: (False, "Blocked: private", ""),
         )
-        err, body, ct = fetch_raw("http://internal.example/", 5, 1000, 2000)
-        assert err == "Blocked: private"
-        assert body == ""
+        result = fetch_raw("http://internal.example/", 5, 1000, 2000)
+        assert not result.ok
+        assert result.error_message == "Blocked: private"
+        assert result.content == ""
 
 
 class TestFetchRawLocalServer:
     def test_plain_text_success(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
         srv.respond("/hello", body=b"hello world", headers={"Content-Type": "text/plain; charset=utf-8"})
-        err, body, ct = fetch_raw(srv.url("/hello"), 5, 100_000, 200_000)
-        assert err is None
-        assert body == "hello world"
-        assert "text/plain" in ct
+        result = fetch_raw(srv.url("/hello"), 5, 100_000, 200_000)
+        assert result.ok
+        assert result.content == "hello world"
+        assert "text/plain" in result.content_type
 
     def test_html_returned_as_text(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
         html = b"<html><body><p>Hi</p></body></html>"
         srv.respond("/page", body=html, headers={"Content-Type": "text/html; charset=utf-8"})
-        err, body, ct = fetch_raw(srv.url("/page"), 5, 100_000, 200_000)
-        assert err is None
-        assert "Hi" in body
-        assert "html" in ct
+        result = fetch_raw(srv.url("/page"), 5, 100_000, 200_000)
+        assert result.ok
+        assert "Hi" in result.content
+        assert "html" in result.content_type
 
     def test_redirect_followed(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
         srv.redirect("/go", srv.url("/dest"))
         srv.respond("/dest", body=b"landed")
-        err, body, ct = fetch_raw(srv.url("/go"), 5, 100_000, 200_000)
-        assert err is None
-        assert body == "landed"
+        result = fetch_raw(srv.url("/go"), 5, 100_000, 200_000)
+        assert result.ok
+        assert result.content == "landed"
 
     def test_redirect_to_blocked_host(self, allow_loopback_fetch, monkeypatch: pytest.MonkeyPatch):
         srv = allow_loopback_fetch
@@ -235,23 +236,24 @@ class TestFetchRawLocalServer:
             return False, f"Blocked: {hostname}", ""
 
         monkeypatch.setattr("web_search.http.resolve_host", _resolve)
-        err, body, ct = fetch_raw(srv.url("/go"), 5, 100_000, 200_000)
-        assert err is not None
-        assert "Blocked" in err
+        result = fetch_raw(srv.url("/go"), 5, 100_000, 200_000)
+        assert not result.ok
+        assert "Blocked" in (result.error_message or "")
 
     def test_redirect_to_userinfo_blocked(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
         srv.redirect("/go", "http://user:pass@127.0.0.1/secret")
-        err, body, ct = fetch_raw(srv.url("/go"), 5, 100_000, 200_000)
-        assert err is not None
-        assert "credential" in err.lower() or "non-global" in err.lower() or "Blocked" in err
+        result = fetch_raw(srv.url("/go"), 5, 100_000, 200_000)
+        assert not result.ok
+        em = result.error_message or ""
+        assert "credential" in em.lower() or "non-global" in em.lower() or "Blocked" in em
 
     def test_http_404_returns_error(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
         srv.respond("/missing", body=b"nope", status=404)
-        err, body, ct = fetch_raw(srv.url("/missing"), 5, 100_000, 200_000)
-        assert err is not None
-        assert "HTTP 404" in err
+        result = fetch_raw(srv.url("/missing"), 5, 100_000, 200_000)
+        assert not result.ok
+        assert "HTTP 404" in (result.error_message or "")
 
     def test_non_text_mime_blocked(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
@@ -260,9 +262,10 @@ class TestFetchRawLocalServer:
             body=b"\x89PNG\r\n\x1a\n" + b"\x00" * 20,
             headers={"Content-Type": "image/png"},
         )
-        err, body, ct = fetch_raw(srv.url("/img"), 5, 100_000, 200_000)
-        assert err is not None
-        assert "non-text content" in err or "binary content" in err
+        result = fetch_raw(srv.url("/img"), 5, 100_000, 200_000)
+        assert not result.ok
+        em = result.error_message or ""
+        assert "non-text content" in em or "binary content" in em
 
     def test_binary_magic_without_helpful_mime(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
@@ -271,9 +274,10 @@ class TestFetchRawLocalServer:
             body=b"\x7fELF" + b"\x00" * 40,
             headers={"Content-Type": "application/octet-stream"},
         )
-        err, body, ct = fetch_raw(srv.url("/bin"), 5, 100_000, 200_000)
-        assert err is not None
-        assert "binary" in err.lower() or "non-text" in err.lower()
+        result = fetch_raw(srv.url("/bin"), 5, 100_000, 200_000)
+        assert not result.ok
+        em = (result.error_message or "").lower()
+        assert "binary" in em or "non-text" in em
 
     def test_pdf_by_content_type(self, allow_loopback_fetch, sample_pdf: bytes):
         srv = allow_loopback_fetch
@@ -282,19 +286,20 @@ class TestFetchRawLocalServer:
             body=sample_pdf,
             headers={"Content-Type": "application/pdf"},
         )
-        err, body, ct = fetch_raw(srv.url("/doc.pdf"), 5, 1000, 500_000)
-        assert err is None
-        assert ct == "application/pdf"
-        assert isinstance(body, str)
+        result = fetch_raw(srv.url("/doc.pdf"), 5, 1000, 500_000)
+        assert result.ok
+        assert result.content_type == "application/pdf"
+        assert isinstance(result.content, str)
 
     def test_oversized_normal_body_errors(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
         big = b"A" * 5000
         srv.respond("/big", body=big, headers={"Content-Type": "text/plain"})
-        err, body, ct = fetch_raw(srv.url("/big"), 5, max_fetch_bytes=100, max_pdf_fetch_bytes=10_000)
-        assert err is not None
-        assert "exceeds download limit" in err
-        assert body == ""
+        result = fetch_raw(srv.url("/big"), 5, max_fetch_bytes=100, max_pdf_fetch_bytes=10_000)
+        assert not result.ok
+        assert "exceeds download limit" in (result.error_message or "")
+        assert result.content == ""
+        assert result.overflow is True or result.error_category == "overflow"
 
     def test_content_length_early_reject(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
@@ -307,9 +312,9 @@ class TestFetchRawLocalServer:
             # Do not write body — client should reject on header alone.
 
         srv.route("/cl", handler)
-        err, body, ct = fetch_raw(srv.url("/cl"), 5, max_fetch_bytes=100, max_pdf_fetch_bytes=10_000)
-        assert err is not None
-        assert "exceeds download limit" in err
+        result = fetch_raw(srv.url("/cl"), 5, max_fetch_bytes=100, max_pdf_fetch_bytes=10_000)
+        assert not result.ok
+        assert "exceeds download limit" in (result.error_message or "")
 
     def test_gzip_body_decoded(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
@@ -322,9 +327,9 @@ class TestFetchRawLocalServer:
                 "Content-Encoding": "gzip",
             },
         )
-        err, body, ct = fetch_raw(srv.url("/gz"), 5, 100_000, 200_000)
-        assert err is None
-        assert body == "hello gzip"
+        result = fetch_raw(srv.url("/gz"), 5, 100_000, 200_000)
+        assert result.ok
+        assert result.content == "hello gzip"
 
     def test_deflate_body_decoded(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
@@ -337,9 +342,9 @@ class TestFetchRawLocalServer:
                 "Content-Encoding": "deflate",
             },
         )
-        err, body, ct = fetch_raw(srv.url("/df"), 5, 100_000, 200_000)
-        assert err is None
-        assert body == "hello deflate"
+        result = fetch_raw(srv.url("/df"), 5, 100_000, 200_000)
+        assert result.ok
+        assert result.content == "hello deflate"
 
     def test_unsupported_content_encoding(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
@@ -351,19 +356,19 @@ class TestFetchRawLocalServer:
                 "Content-Encoding": "br",
             },
         )
-        err, body, ct = fetch_raw(srv.url("/br"), 5, 100_000, 200_000)
-        assert err is not None
-        assert "Unsupported Content-Encoding" in err
+        result = fetch_raw(srv.url("/br"), 5, 100_000, 200_000)
+        assert not result.ok
+        assert "Unsupported Content-Encoding" in (result.error_message or "")
 
     def test_meta_charset_used(self, allow_loopback_fetch):
         # "café" in latin-1 without HTTP charset; meta declares iso-8859-1
         body = b'<html><head><meta charset="iso-8859-1"></head><body>' + "caf\xe9".encode("latin-1") + b"</body></html>"
         srv = allow_loopback_fetch
         srv.respond("/meta", body=body, headers={"Content-Type": "text/html"})
-        err, text, ct = fetch_raw(srv.url("/meta"), 5, 100_000, 200_000)
-        assert err is None
-        assert "caf" in text
-        assert "�" not in text or "é" in text or "caf" in text
+        result = fetch_raw(srv.url("/meta"), 5, 100_000, 200_000)
+        assert result.ok
+        assert "caf" in result.content
+        assert "�" not in result.content or "é" in result.content or "caf" in result.content
 
     def test_bom_over_http_charset(self, allow_loopback_fetch):
         # UTF-8 BOM payload but server claims latin-1 — BOM must win.
@@ -374,9 +379,9 @@ class TestFetchRawLocalServer:
             body=payload,
             headers={"Content-Type": "text/plain; charset=iso-8859-1"},
         )
-        err, text, ct = fetch_raw(srv.url("/bom-http"), 5, 100_000, 200_000)
-        assert err is None
-        assert text == "hello" or text.lstrip("﻿") == "hello"
+        result = fetch_raw(srv.url("/bom-http"), 5, 100_000, 200_000)
+        assert result.ok
+        assert result.content == "hello" or result.content.lstrip("﻿") == "hello"
 
     def test_extra_headers_passed(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
@@ -392,34 +397,34 @@ class TestFetchRawLocalServer:
             h.wfile.write(body)
 
         srv.route("/hdr", handler)
-        err, body, ct = fetch_raw(
+        result = fetch_raw(
             srv.url("/hdr"),
             5,
             100_000,
             200_000,
             extra_headers={"Accept": "application/vnd.github.raw+json"},
         )
-        assert err is None
-        assert "application/vnd.github.raw+json" in body
-        assert "gzip" in body
+        assert result.ok
+        assert "application/vnd.github.raw+json" in result.content
+        assert "gzip" in result.content
 
     def test_utf16_bom_decode(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
         payload = "hello".encode("utf-16-le")
         bom = b"\xff\xfe" + payload
         srv.respond("/bom", body=bom, headers={"Content-Type": "text/plain"})
-        err, body, ct = fetch_raw(srv.url("/bom"), 5, 100_000, 200_000)
-        assert err is None
-        assert "hello" in body
+        result = fetch_raw(srv.url("/bom"), 5, 100_000, 200_000)
+        assert result.ok
+        assert "hello" in result.content
 
     def test_too_many_redirects(self, allow_loopback_fetch, monkeypatch: pytest.MonkeyPatch):
         srv = allow_loopback_fetch
         srv.redirect("/a", srv.url("/b"))
         srv.redirect("/b", srv.url("/a"))
         monkeypatch.setattr("web_search.http.MAX_REDIRECTS", 3)
-        err, body, ct = fetch_raw(srv.url("/a"), 5, 100_000, 200_000)
-        assert err is not None
-        assert "redirect" in err.lower()
+        result = fetch_raw(srv.url("/a"), 5, 100_000, 200_000)
+        assert not result.ok
+        assert "redirect" in (result.error_message or "").lower()
 
     def test_network_exception_message(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
@@ -431,9 +436,9 @@ class TestFetchRawLocalServer:
             raise OSError("connection refused")
 
         monkeypatch.setattr("urllib.request.build_opener", lambda *_a, **_k: MagicMock(open=_boom))
-        err, body, ct = fetch_raw("http://example.test/", 1, 1000, 2000)
-        assert err is not None
-        assert "Failed to fetch URL" in err
+        result = fetch_raw("http://example.test/", 1, 1000, 2000)
+        assert not result.ok
+        assert "Failed to fetch URL" in (result.error_message or "")
 
     def test_decompressed_size_cap(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
@@ -447,15 +452,16 @@ class TestFetchRawLocalServer:
                 "Content-Encoding": "gzip",
             },
         )
-        err, body, ct = fetch_raw(
+        result = fetch_raw(
             srv.url("/bomb"),
             5,
             max_fetch_bytes=100_000,
             max_pdf_fetch_bytes=200_000,
             max_decompressed_bytes=5_000,
         )
-        assert err is not None
-        assert "exceed" in err.lower() or "decompress" in err.lower()
+        assert not result.ok
+        em = (result.error_message or "").lower()
+        assert "exceed" in em or "decompress" in em
 
 
 class TestHttpErrorRedirectPath:
@@ -472,9 +478,9 @@ class TestHttpErrorRedirectPath:
             "urllib.request.build_opener",
             lambda *_a, **_k: MagicMock(open=_open),
         )
-        err, body, ct = fetch_raw("http://example.test/x", 5, 1000, 2000)
-        assert err is not None
-        assert "HTTP 500" in err
+        result = fetch_raw("http://example.test/x", 5, 1000, 2000)
+        assert not result.ok
+        assert "HTTP 500" in (result.error_message or "")
 
     def test_httperror_redirect_missing_location(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
@@ -493,9 +499,9 @@ class TestHttpErrorRedirectPath:
             "urllib.request.build_opener",
             lambda *_a, **_k: MagicMock(open=_open),
         )
-        err, body, ct = fetch_raw("http://example.test/x", 5, 1000, 2000)
-        assert err is not None
-        assert "redirect missing Location" in err
+        result = fetch_raw("http://example.test/x", 5, 1000, 2000)
+        assert not result.ok
+        assert "redirect missing Location" in (result.error_message or "")
 
     def test_httperror_redirect_blocked_target(self, monkeypatch: pytest.MonkeyPatch):
         def _resolve(host, port):
@@ -518,9 +524,9 @@ class TestHttpErrorRedirectPath:
             "urllib.request.build_opener",
             lambda *_a, **_k: MagicMock(open=_open),
         )
-        err, body, ct = fetch_raw("http://example.test/x", 5, 1000, 2000)
-        assert err is not None
-        assert "Blocked" in err
+        result = fetch_raw("http://example.test/x", 5, 1000, 2000)
+        assert not result.ok
+        assert "Blocked" in (result.error_message or "")
 
     def test_httperror_redirect_then_success(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
@@ -568,9 +574,9 @@ class TestHttpErrorRedirectPath:
             "urllib.request.build_opener",
             lambda *_a, **_k: MagicMock(open=_open),
         )
-        err, body, ct = fetch_raw("http://example.test/start", 5, 1000, 2000)
-        assert err is None
-        assert body == "final-body"
+        result = fetch_raw("http://example.test/start", 5, 1000, 2000)
+        assert result.ok
+        assert result.content == "final-body"
 
     def test_too_many_redirects_via_httperror(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr("web_search.http.MAX_REDIRECTS", 2)
@@ -592,9 +598,9 @@ class TestHttpErrorRedirectPath:
             "urllib.request.build_opener",
             lambda *_a, **_k: MagicMock(open=_open),
         )
-        err, body, ct = fetch_raw("http://example.test/start", 5, 1000, 2000)
-        assert err is not None
-        assert "too many redirects" in err.lower()
+        result = fetch_raw("http://example.test/start", 5, 1000, 2000)
+        assert not result.ok
+        assert "too many redirects" in (result.error_message or "").lower()
 
 
 class TestExtractPdfText:

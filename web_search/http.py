@@ -27,6 +27,7 @@ from web_search.config import (
     USER_AGENTS,
 )
 from web_search.content import has_binary_magic, has_pdf_magic, is_text_mime, looks_binary
+from web_search.models import ErrorCategory, FetchResult, classify_http_status
 from web_search.security import resolve_host, validate_http_url
 
 _REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
@@ -295,16 +296,26 @@ def fetch_raw(
     max_decompressed_bytes: int = MAX_DECOMPRESSED_BYTES,
     pdf_max_pages: int = PDF_MAX_PAGES,
     pdf_max_chars: int = PDF_MAX_CHARS,
-) -> tuple[Optional[str], str, str]:
-    """Fetch URL with SSRF protection, DNS pinning, redirect following, body limits."""
+) -> FetchResult:
+    """Fetch URL with SSRF protection, DNS pinning, redirect following, body limits.
+
+    Returns a :class:`FetchResult`. On failure ``error_category`` / ``error_message``
+    are set and ``content`` is empty. Callers format the public string separately.
+    """
+    requested = str(url).strip() if url is not None else ""
+
     ok, reason, validated = validate_http_url(url)
     if not ok or validated is None:
-        return reason, "", ""
+        return FetchResult.failure(requested or str(url), reason, ErrorCategory.BLOCKED)
 
     ok, reason, pinned_ip = resolve_host(validated.hostname, validated.port)
     if not ok:
-        return reason, "", ""
+        cat = ErrorCategory.BLOCKED if "Blocked" in reason or "non-global" in reason.lower() else ErrorCategory.NETWORK
+        if "DNS" in reason:
+            cat = ErrorCategory.NETWORK
+        return FetchResult.failure(requested, reason, cat)
 
+    redirect_count = 0
     try:
         current_url = validated.original
         current_host = validated.hostname
@@ -317,6 +328,28 @@ def fetch_raw(
         content_encoding: str | None = None
         raw_bytes = b""
         declared_pdf = False
+        status = 0
+
+        def _fail(
+            message: str,
+            category: str,
+            *,
+            ct: str = "",
+            code: int | None = None,
+            overflow: bool = False,
+            nbytes: int = 0,
+        ) -> FetchResult:
+            return FetchResult.failure(
+                requested,
+                message,
+                category,
+                final_url=current_url,
+                content_type=ct,
+                status_code=code,
+                bytes_read=nbytes,
+                redirect_count=redirect_count,
+                overflow=overflow,
+            )
 
         for _ in range(MAX_REDIRECTS):
             cp = urlparse(current_url)
@@ -339,25 +372,40 @@ def fetch_raw(
                     resp = e
                     if status not in _REDIRECT_CODES and status >= 400:
                         reason_txt = getattr(e, "reason", "") or ""
+                        msg = f"Failed to fetch URL: HTTP {e.code} {reason_txt}".rstrip()
                         _close_quiet(resp)
-                        return f"Failed to fetch URL: HTTP {e.code} {reason_txt}".rstrip(), "", ""
+                        return _fail(msg, classify_http_status(e.code), code=e.code)
 
                 if status in _REDIRECT_CODES:
                     location = resp.headers.get("Location") if resp is not None else None
                     _close_quiet(resp)
                     resp = None
                     if not location:
-                        return "Failed to fetch: redirect missing Location.", "", ""
+                        return _fail(
+                            "Failed to fetch: redirect missing Location.",
+                            ErrorCategory.REDIRECT,
+                            code=status,
+                        )
 
                     next_url = urljoin(current_url, location)
                     ok_u, reason_u, vnext = validate_http_url(next_url)
                     if not ok_u or vnext is None:
-                        return reason_u or "Blocked: redirect target not valid http/https.", "", ""
+                        return _fail(
+                            reason_u or "Blocked: redirect target not valid http/https.",
+                            ErrorCategory.BLOCKED,
+                            code=status,
+                        )
 
                     ok2, reason2, pinned_ip = resolve_host(vnext.hostname, vnext.port)
                     if not ok2:
-                        return reason2, "", ""
+                        cat = (
+                            ErrorCategory.BLOCKED
+                            if "Blocked" in reason2 or "non-global" in reason2.lower()
+                            else ErrorCategory.NETWORK
+                        )
+                        return _fail(reason2, cat, code=status)
 
+                    redirect_count += 1
                     current_url = next_url
                     current_host = vnext.hostname
                     current_port = vnext.port
@@ -366,7 +414,11 @@ def fetch_raw(
 
                 if status >= 400:
                     _close_quiet(resp)
-                    return f"Failed to fetch URL: HTTP {status}", "", ""
+                    return _fail(
+                        f"Failed to fetch URL: HTTP {status}",
+                        classify_http_status(status),
+                        code=status,
+                    )
 
                 content_type = (
                     (resp.headers.get_content_type() or "").lower() if resp.headers.get("Content-Type") else ""
@@ -376,13 +428,11 @@ def fetch_raw(
                 content_encoding = ce_header.strip() if ce_header else None
                 declared_pdf = content_type == "application/pdf"
 
-                # Compressed wire budget vs logical body budget.
                 wire_limit = (
                     max_compressed_bytes
                     if content_encoding
                     else (max_pdf_fetch_bytes if declared_pdf else max_fetch_bytes)
                 )
-                # Always enforce the tighter of wire_limit and type-specific download caps.
                 if declared_pdf:
                     wire_limit = min(wire_limit, max_pdf_fetch_bytes)
                 elif not content_encoding:
@@ -391,17 +441,29 @@ def fetch_raw(
                 cl = _content_length(resp.headers)
                 if cl is not None and cl > wire_limit:
                     _close_quiet(resp)
-                    return f"(content exceeds download limit of {wire_limit} bytes)", "", content_type
+                    return _fail(
+                        f"(content exceeds download limit of {wire_limit} bytes)",
+                        ErrorCategory.OVERFLOW,
+                        ct=content_type,
+                        code=status,
+                        overflow=True,
+                    )
 
                 err, raw_bytes, overflow = read_capped_body(resp, wire_limit)
                 if err:
                     _close_quiet(resp)
-                    return err, "", ""
+                    return _fail(err, ErrorCategory.NETWORK, code=status)
                 if overflow:
                     _close_quiet(resp)
-                    return f"(content exceeds download limit of {wire_limit} bytes)", "", content_type
+                    return _fail(
+                        f"(content exceeds download limit of {wire_limit} bytes)",
+                        ErrorCategory.OVERFLOW,
+                        ct=content_type,
+                        code=status,
+                        overflow=True,
+                        nbytes=len(raw_bytes),
+                    )
 
-                # Sniff PDF after partial read when not declared.
                 if (
                     not declared_pdf
                     and not content_encoding
@@ -409,17 +471,22 @@ def fetch_raw(
                     and len(raw_bytes) == wire_limit
                     and max_pdf_fetch_bytes > wire_limit
                 ):
-                    # Already at normal limit with PDF magic — would need larger cap; re-fetch not done.
-                    # If we still have stream capacity, try reading more up to pdf limit.
                     extra_limit = max_pdf_fetch_bytes - len(raw_bytes)
                     err2, tail, overflow2 = read_capped_body(resp, extra_limit)
                     if err2:
                         _close_quiet(resp)
-                        return err2, "", ""
+                        return _fail(err2, ErrorCategory.NETWORK, code=status)
                     raw_bytes = raw_bytes + tail
                     if overflow2 or len(raw_bytes) > max_pdf_fetch_bytes:
                         _close_quiet(resp)
-                        return f"(content exceeds download limit of {max_pdf_fetch_bytes} bytes)", "", content_type
+                        return _fail(
+                            f"(content exceeds download limit of {max_pdf_fetch_bytes} bytes)",
+                            ErrorCategory.OVERFLOW,
+                            ct=content_type,
+                            code=status,
+                            overflow=True,
+                            nbytes=len(raw_bytes),
+                        )
                     declared_pdf = True
 
                 _close_quiet(resp)
@@ -428,31 +495,72 @@ def fetch_raw(
             finally:
                 _close_quiet(resp)
         else:
-            return "Failed to fetch: too many redirects.", "", ""
+            return _fail("Failed to fetch: too many redirects.", ErrorCategory.REDIRECT)
 
-        # Decompress if needed (before PDF/binary sniff on payload).
         if content_encoding:
             derr, raw_bytes = decompress_body(raw_bytes, content_encoding, max_decompressed_bytes)
             if derr is not None:
-                return derr, "", content_type
+                cat = ErrorCategory.OVERFLOW if "exceed" in derr.lower() else ErrorCategory.DECODE
+                return _fail(
+                    derr,
+                    cat,
+                    ct=content_type,
+                    code=status,
+                    overflow=cat == ErrorCategory.OVERFLOW,
+                    nbytes=len(raw_bytes) if raw_bytes else 0,
+                )
 
         is_pdf = declared_pdf or has_pdf_magic(raw_bytes)
         if is_pdf:
             if len(raw_bytes) > max_pdf_fetch_bytes:
-                return "(PDF exceeds download limit)", "", content_type or "application/pdf"
+                return _fail(
+                    "(PDF exceeds download limit)",
+                    ErrorCategory.OVERFLOW,
+                    ct=content_type or "application/pdf",
+                    code=status,
+                    overflow=True,
+                    nbytes=len(raw_bytes),
+                )
             pdf_text = extract_pdf_text(raw_bytes, max_pages=pdf_max_pages, max_chars=pdf_max_chars)
-            return None, pdf_text or "(PDF contains no extractable text)", "application/pdf"
+            content = pdf_text or "(PDF contains no extractable text)"
+            return FetchResult.success(
+                requested,
+                content,
+                final_url=current_url,
+                content_type="application/pdf",
+                status_code=status,
+                bytes_read=len(raw_bytes),
+                redirect_count=redirect_count,
+            )
 
-        # After decompression, enforce normal page byte budget for non-PDF.
         if len(raw_bytes) > max_fetch_bytes:
-            return f"(content exceeds download limit of {max_fetch_bytes} bytes)", "", content_type
+            return _fail(
+                f"(content exceeds download limit of {max_fetch_bytes} bytes)",
+                ErrorCategory.OVERFLOW,
+                ct=content_type,
+                code=status,
+                overflow=True,
+                nbytes=len(raw_bytes),
+            )
 
         if content_type and not is_text_mime(content_type):
             m = re.match(r"[\w.+-]+/[\w.+-]+", content_type)
-            return f"(non-text content: {m.group(0) if m else 'unknown type'})", "", content_type
+            return _fail(
+                f"(non-text content: {m.group(0) if m else 'unknown type'})",
+                ErrorCategory.UNSUPPORTED,
+                ct=content_type,
+                code=status,
+                nbytes=len(raw_bytes),
+            )
 
         if has_binary_magic(raw_bytes):
-            return f"(binary content, {len(raw_bytes)} bytes)", "", content_type
+            return _fail(
+                f"(binary content, {len(raw_bytes)} bytes)",
+                ErrorCategory.UNSUPPORTED,
+                ct=content_type,
+                code=status,
+                nbytes=len(raw_bytes),
+            )
 
         charset = detect_charset(raw_bytes, declared_enc)
         try:
@@ -470,18 +578,51 @@ def fetch_raw(
                 if not looks_binary(alt):
                     text = alt
                 else:
-                    return f"(binary content, {len(raw_bytes)} bytes)", "", content_type
+                    return _fail(
+                        f"(binary content, {len(raw_bytes)} bytes)",
+                        ErrorCategory.UNSUPPORTED,
+                        ct=content_type,
+                        code=status,
+                        nbytes=len(raw_bytes),
+                    )
             else:
-                return f"(binary content, {len(raw_bytes)} bytes)", "", content_type
+                return _fail(
+                    f"(binary content, {len(raw_bytes)} bytes)",
+                    ErrorCategory.UNSUPPORTED,
+                    ct=content_type,
+                    code=status,
+                    nbytes=len(raw_bytes),
+                )
 
-        return None, text, content_type
+        return FetchResult.success(
+            requested,
+            text,
+            final_url=current_url,
+            content_type=content_type,
+            status_code=status,
+            bytes_read=len(raw_bytes),
+            redirect_count=redirect_count,
+        )
 
     except urllib.error.HTTPError as e:
-        return f"Failed to fetch URL: HTTP {e.code} {getattr(e, 'reason', '')}", "", ""
+        msg = f"Failed to fetch URL: HTTP {e.code} {getattr(e, 'reason', '')}"
+        return FetchResult.failure(requested, msg, classify_http_status(e.code), status_code=e.code)
     except urllib.error.URLError as e:
         reason_txt = getattr(e, "reason", e)
-        return f"Failed to fetch URL: {reason_txt}", "", ""
+        return FetchResult.failure(
+            requested,
+            f"Failed to fetch URL: {reason_txt}",
+            ErrorCategory.NETWORK,
+        )
     except (TimeoutError, socket.timeout) as e:
-        return f"Failed to fetch URL: timeout ({e})", "", ""
+        return FetchResult.failure(
+            requested,
+            f"Failed to fetch URL: timeout ({e})",
+            ErrorCategory.TIMEOUT,
+        )
     except OSError as e:
-        return f"Failed to fetch URL: {e}", "", ""
+        return FetchResult.failure(
+            requested,
+            f"Failed to fetch URL: {e}",
+            ErrorCategory.NETWORK,
+        )

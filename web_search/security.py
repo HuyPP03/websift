@@ -117,12 +117,16 @@ def validate_http_url(url: str) -> tuple[bool, str, ValidatedURL | None]:
         if is_blocked_ip(hostname_ascii):
             return False, f"Blocked: {hostname_ascii!r} is a non-global address.", None
 
-    return True, "", ValidatedURL(
-        original=raw,
-        scheme=parsed.scheme,
-        hostname=hostname_ascii,
-        port=effective_port,
-        parsed=parsed,
+    return (
+        True,
+        "",
+        ValidatedURL(
+            original=raw,
+            scheme=parsed.scheme,
+            hostname=hostname_ascii,
+            port=effective_port,
+            parsed=parsed,
+        ),
     )
 
 
