@@ -1,0 +1,13 @@
+<html>
+<body>
+<div>
+  <p>Unclosed paragraph with <b>bold
+  <h2>Heading after bad nest</h2>
+  <p>Still readable content after malformed markup appears here with padding text for stability under the html.parser recovery path used by BeautifulSoup.
+  <ul>
+    <li>Item one
+    <li>Item two
+  </ul>
+</div>
+<script>bad()</script>
+</body>
