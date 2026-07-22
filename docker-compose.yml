@@ -1,9 +1,41 @@
+# websift MCP server — no required .env file.
+# Inject secrets at runtime only (compose env / --env-file / orchestrator secrets).
+# Do not bake API keys or MCP_BEARER_TOKEN into the image.
+
 services:
-  web-search-mcp:
+  websift:
     build: .
-    container_name: web-search-mcp
+    image: websift:local
+    container_name: websift
     ports:
-      - "${MCP_PORT:-8787}:${MCP_PORT:-8787}"
-    env_file:
-      - .env
+      - "${MCP_PORT:-8787}:8787"
+    environment:
+      # Container-local bind; publish via ports: mapping only.
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "8787"
+      MCP_TRANSPORT: ${MCP_TRANSPORT:-streamable-http}
+      MCP_AUTH_MODE: ${MCP_AUTH_MODE:-none}
+      # Optional — leave empty when MCP_AUTH_MODE=none
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-}
+      MCP_MAX_REQUEST_BODY_BYTES: ${MCP_MAX_REQUEST_BODY_BYTES:-}
+      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-ddgs}
+      SEARCH_MAX_RESULTS: ${SEARCH_MAX_RESULTS:-5}
+      SEARCH_FALLBACK_PROVIDERS: ${SEARCH_FALLBACK_PROVIDERS:-}
+      SEARCH_TIMEOUT_SECONDS: ${SEARCH_TIMEOUT_SECONDS:-30}
+      FETCH_TIMEOUT_SECONDS: ${FETCH_TIMEOUT_SECONDS:-30}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Provider endpoints/keys — empty by default; set via shell env or:
+      #   docker compose --env-file .env up
+      SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-}
+      SEARXNG_API_KEY: ${SEARXNG_API_KEY:-}
+      BRAVE_BASE_URL: ${BRAVE_BASE_URL:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      TAVILY_BASE_URL: ${TAVILY_BASE_URL:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      EXA_BASE_URL: ${EXA_BASE_URL:-}
+      EXA_API_KEY: ${EXA_API_KEY:-}
+      PROVIDER_ALLOW_HTTP: ${PROVIDER_ALLOW_HTTP:-false}
     restart: unless-stopped
+    # Optional resource hints (uncomment if your orchestrator supports them):
+    # mem_limit: 512m
+    # cpus: "1.0"

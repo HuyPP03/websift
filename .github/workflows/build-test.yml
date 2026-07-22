@@ -120,8 +120,92 @@ jobs:
           print("smoke ok", web_search.__version__, "entry", websift_eps[0].value)
           PY
 
+      - name: Smoke optional provider extras
+        run: |
+          set -euo pipefail
+          WHL=$(ls dist/websift-*.whl | head -1)
+          for extra in searxng brave tavily exa providers; do
+            echo "::group::extra=${extra}"
+            rm -rf "/tmp/websift-extra-${extra}"
+            python -m venv "/tmp/websift-extra-${extra}"
+            "/tmp/websift-extra-${extra}/bin/pip" install --upgrade pip
+            "/tmp/websift-extra-${extra}/bin/pip" install "${WHL}[${extra}]"
+            "/tmp/websift-extra-${extra}/bin/python" - <<'PY'
+          from web_search.providers.registry import list_providers, is_registered
+          from web_search.providers import brave, ddgs, exa, searxng, tavily
+
+          names = set(list_providers())
+          for n in ("ddgs", "searxng", "brave", "tavily", "exa"):
+              assert n in names and is_registered(n), n
+          assert brave.BraveProvider and tavily.TavilyProvider
+          assert exa.ExaProvider and searxng.SearxngProvider and ddgs.DdgsProvider
+          print("provider modules ok", sorted(names))
+          PY
+            echo "::endgroup::"
+          done
+
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:
           name: python-package-distributions
           path: dist/
+
+  docker:
+    name: Docker build + smoke
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t websift:ci .
+
+      - name: Run container
+        run: |
+          docker run -d --name websift-ci \
+            -p 8787:8787 \
+            -e MCP_HOST=0.0.0.0 \
+            -e MCP_PORT=8787 \
+            -e MCP_TRANSPORT=streamable-http \
+            -e MCP_AUTH_MODE=none \
+            websift:ci
+
+      - name: Wait for TCP listen
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if python -c "import socket; s=socket.create_connection(('127.0.0.1',8787),1); s.close()"; then
+              echo "port open"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "timeout waiting for port 8787"
+          docker logs websift-ci || true
+          exit 1
+
+      - name: Non-root user smoke
+        run: |
+          set -euo pipefail
+          uid=$(docker exec websift-ci id -u)
+          user=$(docker exec websift-ci whoami)
+          test "$uid" = "10001"
+          test "$user" = "websift"
+          docker exec websift-ci python -c "import web_search; print(web_search.__version__)"
+          docker exec websift-ci which websift
+
+      - name: Image must not embed common secret env values
+        run: |
+          set -euo pipefail
+          if docker history --no-trunc websift:ci | grep -Eiq 'MCP_BEARER_TOKEN=|BRAVE_API_KEY=|TAVILY_API_KEY=|EXA_API_KEY='; then
+            echo "secret-like ENV assignment found in image history" >&2
+            exit 1
+          fi
+
+      - name: Collect logs and stop
+        if: always()
+        run: |
+          docker logs websift-ci || true
+          docker rm -f websift-ci || true

@@ -1,0 +1,30 @@
+# Docker build context exclusions. Keep packaging inputs (pyproject, README,
+# LICENSE, web_search/, server.py) available for the multi-stage wheel build.
+
+.git
+.github
+.claude
+.venv
+venv
+env
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+.eggs
+build
+dist
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+htmlcov
+coverage.xml
+.env
+.env.*
+!.env.example
+tests
+docs
+plan.md
+*.md
+!README.md
+.DS_Store

@@ -165,7 +165,7 @@ That's it — you can now use it as a **Python library** (direct import) or as a
 ### Option 2: Docker Compose
 
 ```bash
-# Clone and start
+# Clone and start (no .env file required)
 git clone <repo-url>
 cd websift
 docker compose up -d --build
@@ -173,11 +173,22 @@ docker compose up -d --build
 
 The MCP server will be available at `http://localhost:8787/mcp`.
 
+- Runs as non-root (`uid 10001`), entrypoint `websift` from the installed wheel.
+- Inject secrets at runtime only, e.g. `MCP_BEARER_TOKEN=... BRAVE_API_KEY=... docker compose up -d` or `docker compose --env-file .env up -d`.
+- Image default bind is `0.0.0.0` **inside** the container network so published ports work; protect with host firewall, reverse proxy, and/or `MCP_AUTH_MODE=bearer`.
+
+Optional resource limits (compose / orchestrator): ~512 MB RAM and 1 CPU are enough for light use.
+
 ### Option 3: Docker (Manual)
 
 ```bash
 docker build -t websift .
-docker run -d --name websift -p 8787:8787 websift
+docker run -d --name websift -p 8787:8787 \
+  -e MCP_AUTH_MODE=none \
+  websift
+# With bearer auth:
+# docker run -d --name websift -p 8787:8787 \
+#   -e MCP_AUTH_MODE=bearer -e MCP_BEARER_TOKEN='…' websift
 ```
 
 ### Option 4: Local Python (No Docker)
@@ -307,15 +318,43 @@ The Python programming language...
 | `MCP_HOST`               | `127.0.0.1`       | Bind address (use `0.0.0.0` only when intentionally exposing)      |
 | `MCP_PORT`               | `8787`            | Listen port                                                          |
 | `MCP_TRANSPORT`          | `streamable-http` | Transport: `streamable-http`, `sse`, or `stdio`                  |
+| `MCP_AUTH_MODE`          | `none`            | `none` or `bearer` (HTTP/SSE only)                               |
+| `MCP_BEARER_TOKEN`       | (empty)             | Shared secret when `MCP_AUTH_MODE=bearer`                          |
 | `SEARCH_PROVIDER`        | `ddgs`            | Server-wide search provider (**allowlisted**; not settable per tool call) |
 | `SEARCH_MAX_RESULTS`     | `5`               | Max search results returned                                          |
 | `SEARCH_TIMEOUT_SECONDS` | `30`              | Search timeout (seconds)                                             |
 | `FETCH_TIMEOUT_SECONDS`  | `30`              | Page fetch timeout (seconds)                                         |
 | `SEARCH_TIMEOUT`         | (alias)             | **Deprecated**: if set and specific timeouts omit, maps to both |
+| `SEARCH_FALLBACK_PROVIDERS` | (empty)          | Comma-separated allowlisted fallbacks after primary (no config/auth fallback) |
 | `PAGE_MAX_CHARS`         | `32000`           | Max characters returned from fetch                                   |
 | `SEARCH_MAX_CONCURRENCY` | `8`               | Max concurrent search operations                                     |
 | `FETCH_MAX_CONCURRENCY`  | `16`              | Max concurrent page fetches                                          |
 | `PDF_MAX_CONCURRENCY`    | `2`               | Max concurrent PDF parses                                            |
+
+### Search providers
+
+Server-wide only (`SEARCH_PROVIDER`). MCP tools never accept provider name, base URL, or API keys.
+
+| Provider | Extra | Credentials / endpoint | Notes |
+| -------- | ----- | ---------------------- | ----- |
+| **ddgs** (default) | base install | none | DuckDuckGo via `ddgs` package |
+| **searxng** | `websift[searxng]` (marker; no extra deps today) | `SEARXNG_BASE_URL` (required), optional `SEARXNG_API_KEY` | Self-hosted; set `PROVIDER_ALLOW_HTTP=true` only for local `http://` instances |
+| **brave** | `websift[brave]` | `BRAVE_API_KEY` (required), optional `BRAVE_BASE_URL` | Official Web Search API |
+| **tavily** | `websift[tavily]` | `TAVILY_API_KEY` (required), optional `TAVILY_BASE_URL` | |
+| **exa** | `websift[exa]` | `EXA_API_KEY` (required), optional `EXA_BASE_URL` | |
+
+Convenience: `pip install 'websift[providers]'` (all keyed/self-hosted HTTP providers — currently no extra wheels beyond the base package; adapters use stdlib HTTP).
+
+Optional filters (provider-dependent): `SEARCH_SAFE_SEARCH`, `SEARCH_REGION`, `SEARCH_TIME_RANGE`. Unsupported filters fail closed unless `SEARCH_ALLOW_UNSUPPORTED_FILTERS=true`.
+
+Fallback chain (opt-in):
+
+```bash
+export SEARCH_PROVIDER=brave
+export BRAVE_API_KEY=...
+export SEARCH_FALLBACK_PROVIDERS=ddgs
+# Does not fall back on config/auth errors (missing key, etc.)
+```
 
 ### Internal Limits
 
@@ -673,8 +712,11 @@ twine check dist/*
 ### Running with Docker
 
 ```bash
-# Build and start
+# Build and start (no .env required)
 docker compose up -d --build
+
+# Optional secrets via env file or shell
+# docker compose --env-file .env up -d
 
 # View logs
 docker compose logs -f
@@ -683,13 +725,15 @@ docker compose logs -f
 docker compose down
 ```
 
+Image runs as non-root (`websift` uid 10001), entrypoint `websift`, TCP healthcheck on `MCP_PORT`.
+
 ---
 
 ## FAQ
 
 ### Q: Does this require an API key?
 
-**Not for the default DDGS provider.** DuckDuckGo search needs no key. Future optional providers (e.g. Brave) may require keys via server settings — never via MCP tool arguments.
+**Not for the default DDGS provider.** DuckDuckGo search needs no key. Optional providers **Brave / Tavily / Exa** need server env keys (`BRAVE_API_KEY`, …); **SearXNG** needs `SEARXNG_BASE_URL`. Keys are never accepted via MCP tool arguments — see [Search providers](#search-providers).
 
 ### Q: Is this unlimited / no rate limits?
 

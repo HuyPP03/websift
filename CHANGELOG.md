@@ -5,6 +5,40 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.3.0] - 2026-07-22
+
+Providers, optional MCP auth, and hardened packaging/Docker. Public Python/MCP tool names and string APIs stay compatible.
+
+### Added
+
+- Search providers beyond default DDGS: **SearXNG**, **Brave**, **Tavily**, **Exa** (allowlisted server-wide via `SEARCH_PROVIDER` / optional fallbacks; adapters use stdlib HTTP).
+- Optional install extras: `searxng`, `brave`, `tavily`, `exa`, `providers` (markers; modules ship in the base package).
+- Optional MCP **bearer auth** for HTTP/SSE (`MCP_AUTH_MODE=bearer` + `MCP_BEARER_TOKEN`); STDIO unchanged.
+- Request body size limit for HTTP MCP (`MCP_MAX_REQUEST_BODY_BYTES`).
+- Hardened Docker image: multi-stage wheel install, non-root `websift` (uid 10001), `websift` entrypoint, TCP healthcheck, `.dockerignore`.
+- Compose no longer requires a local `.env`; secrets inject at runtime only.
+- CI: optional-extra smoke installs; Docker build + non-root smoke job.
+- Runtime flag matrix wired for fetch/HTML/logging settings (cache storage reserved for a later release).
+- README / VI docs: full search-provider matrix (env keys, fallback, extras) and auth/Docker guidance.
+
+### Security
+
+- Optional shared-secret bearer for remote MCP HTTP/SSE; tokens compared in constant time and never logged or echoed in 401 bodies.
+- Credential isolation retained: provider secrets never ride the arbitrary page-fetch path.
+
+### Compatibility notes
+
+| Item | Behavior in 0.3.0 |
+| ---- | ----------------- |
+| `from web_search import WebSearchClient` | Unchanged |
+| PyPI / CLI `websift` | Unchanged names |
+| MCP tools `web_search` / `web_fetch` | Same names and `query` / `url` schemas |
+| `MCP_HOST` default | Loopback (`127.0.0.1`); Docker image sets bind for published ports |
+| `MCP_AUTH_MODE` | Default `none`; opt-in `bearer` for HTTP/SSE only |
+| Provider selection | Server-wide env only (not per tool call) |
+
 ## [0.2.0] - 2026-07-22
 
 Hardening release (P0). Public Python/MCP tool names and string APIs stay compatible.

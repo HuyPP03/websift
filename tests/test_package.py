@@ -1,9 +1,10 @@
 """Package metadata and public exports."""
 
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import PackageNotFoundError, metadata, version
 
 import web_search
 from web_search import WebSearchClient
+from web_search.providers.registry import is_registered, list_providers
 
 
 def test_version_is_semver_like():
@@ -12,8 +13,8 @@ def test_version_is_semver_like():
     assert all(p.isdigit() for p in parts[:2])
 
 
-def test_version_is_hardening_release():
-    assert web_search.__version__ == "0.2.0"
+def test_version_is_providers_release():
+    assert web_search.__version__ == "0.3.0"
 
 
 def test_distribution_version_matches_package_when_installed():
@@ -41,3 +42,17 @@ def test_dual_naming_documented_in_package_doc():
     doc = (web_search.__doc__ or "").lower()
     assert "websift" in doc
     assert "web_search" in doc
+
+
+def test_optional_provider_extras_declared_when_installed():
+    """Optional extras exist for docs/CI; modules ship in the base wheel."""
+    try:
+        meta = metadata("websift")
+    except PackageNotFoundError:
+        return
+    provides = meta.get_all("Provides-Extra") or []
+    for extra in ("searxng", "brave", "tavily", "exa", "providers", "dev"):
+        assert extra in provides, provides
+    for name in ("ddgs", "searxng", "brave", "tavily", "exa"):
+        assert is_registered(name)
+    assert set(list_providers()) >= {"ddgs", "searxng", "brave", "tavily", "exa"}

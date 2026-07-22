@@ -42,6 +42,15 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
 ]
+# HTTP search providers ship in the base package (stdlib urllib + package
+# provider_http). Extras are install markers for docs/CI and reserved if a
+# future provider needs an optional SDK. Empty lists are intentional.
+searxng = []
+brave = []
+tavily = []
+exa = []
+# Convenience alias: all keyed/self-hosted HTTP providers.
+providers = []
 
 [project.scripts]
 websift = "web_search.server:main"
