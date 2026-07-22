@@ -1,4 +1,4 @@
-"""HTTP fetch characterization tests (offline)."""
+"""HTTP fetch tests (phase 1: URL validation + redirect SSRF)."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ class TestReadCappedBody:
         assert data == b"hello"
 
     def test_stops_at_limit_without_overflow_detection(self):
-        """v0.1.0: stops at exactly limit; cannot distinguish full vs overflow."""
+        """Still phase-2: stops at exactly limit; cannot distinguish full vs overflow."""
 
         class R:
             def __init__(self, data: bytes):
@@ -40,7 +40,6 @@ class TestReadCappedBody:
         err, data = read_capped_body(R(payload), limit=20)
         assert err is None
         assert data == b"x" * 20
-        assert len(data) == 20
 
     def test_read_error(self):
         class R:
@@ -65,12 +64,27 @@ class TestFetchRawValidation:
         assert err is not None
         assert "hostname" in err.lower()
 
+    def test_blocks_userinfo(self):
+        err, body, ct = fetch_raw("https://user:secret@example.com/", 5, 1000, 2000)
+        assert err is not None
+        assert "credential" in err.lower()
+
+    def test_blocks_malformed_port(self):
+        err, body, ct = fetch_raw("https://example.com:notaport/", 5, 1000, 2000)
+        assert err is not None
+        assert "port" in err.lower()
+
+    def test_blocks_loopback_literal_without_dns(self):
+        err, body, ct = fetch_raw("http://127.0.0.1:9/", 5, 1000, 2000)
+        assert err is not None
+        assert "non-global" in err.lower() or "Blocked" in err
+
     def test_blocks_private_dns(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
             "web_search.http.resolve_host",
             lambda host, port: (False, "Blocked: private", ""),
         )
-        err, body, ct = fetch_raw("http://internal.local/", 5, 1000, 2000)
+        err, body, ct = fetch_raw("http://internal.example/", 5, 1000, 2000)
         assert err == "Blocked: private"
         assert body == ""
 
@@ -93,27 +107,42 @@ class TestFetchRawLocalServer:
         assert "Hi" in body
         assert "html" in ct
 
-    def test_redirect_not_followed_baseline_gap(self, allow_loopback_fetch):
-        """v0.1.0 gap: _NoRedirect returns 3xx as success; HTTPError redirect path never runs.
-
-        Manual redirect-following code in fetch_raw is effectively dead for the default opener.
-        """
+    def test_redirect_followed(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
         srv.redirect("/go", srv.url("/dest"))
         srv.respond("/dest", body=b"landed")
         err, body, ct = fetch_raw(srv.url("/go"), 5, 100_000, 200_000)
-        # Current: 302 empty body treated as success
         assert err is None
-        assert body == ""
-        assert body != "landed"
+        assert body == "landed"
 
-    def test_http_404_not_raised_baseline_gap(self, allow_loopback_fetch):
-        """v0.1.0 gap: _NoRedirect also suppresses HTTPError for 4xx → body returned as success."""
+    def test_redirect_to_blocked_host(self, allow_loopback_fetch, monkeypatch: pytest.MonkeyPatch):
+        srv = allow_loopback_fetch
+        srv.redirect("/go", "http://evil.internal/secret")
+
+        def _resolve(hostname: str, port: int):
+            if hostname in {"127.0.0.1", "localhost"}:
+                return True, "", "127.0.0.1"
+            return False, f"Blocked: {hostname}", ""
+
+        monkeypatch.setattr("web_search.http.resolve_host", _resolve)
+        # Also block via validate if literal — hostname evil.internal hits resolve
+        err, body, ct = fetch_raw(srv.url("/go"), 5, 100_000, 200_000)
+        assert err is not None
+        assert "Blocked" in err
+
+    def test_redirect_to_userinfo_blocked(self, allow_loopback_fetch):
+        srv = allow_loopback_fetch
+        srv.redirect("/go", "http://user:pass@127.0.0.1/secret")
+        err, body, ct = fetch_raw(srv.url("/go"), 5, 100_000, 200_000)
+        assert err is not None
+        assert "credential" in err.lower() or "non-global" in err.lower() or "Blocked" in err
+
+    def test_http_404_returns_error(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
         srv.respond("/missing", body=b"nope", status=404)
         err, body, ct = fetch_raw(srv.url("/missing"), 5, 100_000, 200_000)
-        assert err is None
-        assert body == "nope"
+        assert err is not None
+        assert "HTTP 404" in err
 
     def test_non_text_mime_blocked(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
@@ -150,14 +179,6 @@ class TestFetchRawLocalServer:
             assert ct == "application/pdf"
             assert isinstance(body, str)
 
-    def test_pdf_exceeds_limit(self, allow_loopback_fetch):
-        srv = allow_loopback_fetch
-        body = b"%PDF-1.4\n" + b"x" * 500
-        srv.respond("/big.pdf", body=body, headers={"Content-Type": "application/pdf"})
-        err, text, ct = fetch_raw(srv.url("/big.pdf"), 5, max_fetch_bytes=50, max_pdf_fetch_bytes=100)
-        # read_limit is max_pdf+1 so may still load; if over max_pdf after read:
-        assert err is not None or isinstance(text, str)
-
     def test_oversized_normal_body_capped(self, allow_loopback_fetch):
         srv = allow_loopback_fetch
         big = b"A" * 5000
@@ -167,7 +188,7 @@ class TestFetchRawLocalServer:
         assert len(body) <= 100
 
     def test_gzip_body_not_transparently_decoded(self, allow_loopback_fetch):
-        """v0.1.0 gap: Content-Encoding gzip is not handled; raw bytes may look binary."""
+        """Phase 2: Content-Encoding gzip is not handled; raw bytes may look binary."""
         srv = allow_loopback_fetch
         raw = gzip.compress(b"hello gzip")
         srv.respond(
@@ -213,10 +234,19 @@ class TestFetchRawLocalServer:
         assert err is None
         assert "hello" in body
 
+    def test_too_many_redirects(self, allow_loopback_fetch, monkeypatch: pytest.MonkeyPatch):
+        srv = allow_loopback_fetch
+        srv.redirect("/a", srv.url("/b"))
+        srv.redirect("/b", srv.url("/a"))
+        monkeypatch.setattr("web_search.http.MAX_REDIRECTS", 3)
+        err, body, ct = fetch_raw(srv.url("/a"), 5, 100_000, 200_000)
+        assert err is not None
+        assert "redirect" in err.lower()
+
     def test_network_exception_message(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
             "web_search.http.resolve_host",
-            lambda host, port: (True, "", "203.0.113.9"),
+            lambda host, port: (True, "", "8.8.8.8"),
         )
 
         def _boom(*_a, **_k):
@@ -229,12 +259,10 @@ class TestFetchRawLocalServer:
 
 
 class TestHttpErrorRedirectPath:
-    """Exercise dead-ish HTTPError redirect branch by mocking opener.open."""
-
     def test_httperror_non_redirect(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
             "web_search.http.resolve_host",
-            lambda host, port: (True, "", "203.0.113.9"),
+            lambda host, port: (True, "", "8.8.8.8"),
         )
 
         def _open(req, timeout=None):
@@ -251,7 +279,7 @@ class TestHttpErrorRedirectPath:
     def test_httperror_redirect_missing_location(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
             "web_search.http.resolve_host",
-            lambda host, port: (True, "", "203.0.113.9"),
+            lambda host, port: (True, "", "8.8.8.8"),
         )
 
         class H(dict):
@@ -270,11 +298,9 @@ class TestHttpErrorRedirectPath:
         assert "redirect missing Location" in err
 
     def test_httperror_redirect_blocked_target(self, monkeypatch: pytest.MonkeyPatch):
-        calls = {"n": 0}
-
         def _resolve(host, port):
             if host == "example.test":
-                return True, "", "203.0.113.9"
+                return True, "", "8.8.8.8"
             return False, "Blocked: private", ""
 
         monkeypatch.setattr("web_search.http.resolve_host", _resolve)
@@ -286,7 +312,6 @@ class TestHttpErrorRedirectPath:
                 return default
 
         def _open(req, timeout=None):
-            calls["n"] += 1
             raise urllib.error.HTTPError(req.full_url, 302, "Found", hdrs=H(), fp=None)
 
         monkeypatch.setattr(
@@ -294,12 +319,14 @@ class TestHttpErrorRedirectPath:
             lambda *_a, **_k: MagicMock(open=_open),
         )
         err, body, ct = fetch_raw("http://example.test/x", 5, 1000, 2000)
-        assert err == "Blocked: private"
+        # 10.0.0.1 is rejected by validate_http_url (literal non-global) before resolve
+        assert err is not None
+        assert "Blocked" in err
 
     def test_httperror_redirect_then_success(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
             "web_search.http.resolve_host",
-            lambda host, port: (True, "", "203.0.113.9"),
+            lambda host, port: (True, "", "8.8.8.8"),
         )
 
         class Loc(dict):
@@ -322,6 +349,14 @@ class TestHttpErrorRedirectPath:
                 chunk, self._data = self._data[:n], self._data[n:]
                 return chunk
 
+            def close(self):
+                return None
+
+            def getcode(self):
+                return 200
+
+            status = 200
+
         state = {"n": 0}
 
         def _open(req, timeout=None):
@@ -342,7 +377,7 @@ class TestHttpErrorRedirectPath:
         monkeypatch.setattr("web_search.http.MAX_REDIRECTS", 2)
         monkeypatch.setattr(
             "web_search.http.resolve_host",
-            lambda host, port: (True, "", "203.0.113.9"),
+            lambda host, port: (True, "", "8.8.8.8"),
         )
 
         class Loc(dict):

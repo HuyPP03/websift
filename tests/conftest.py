@@ -12,7 +12,8 @@ import pytest
 
 @pytest.fixture
 def public_ip() -> str:
-    return "203.0.113.10"
+    # Must be a true global address (TEST-NET ranges are not is_global).
+    return "8.8.8.8"
 
 
 @pytest.fixture
@@ -135,15 +136,42 @@ def http_server():
 
 @pytest.fixture
 def allow_loopback_fetch(monkeypatch: pytest.MonkeyPatch, http_server):
-    """Bypass SSRF for local fixture server while still exercising fetch_raw."""
+    """Allow fetch_raw against the local fixture server (loopback is blocked in prod)."""
+    from urllib.parse import urlparse
+
+    from web_search.security import ValidatedURL
+    from web_search.security import resolve_host as real_resolve
+    from web_search.security import validate_http_url as real_validate
+
+    def _validate(url: str):
+        ok, reason, validated = real_validate(url)
+        if ok:
+            return ok, reason, validated
+        parsed = urlparse(str(url).strip())
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme in {"http", "https"} and host in {"127.0.0.1", "localhost"}:
+            if parsed.username is not None or parsed.password is not None or "@" in (parsed.netloc or ""):
+                return False, "Blocked: URL must not contain embedded credentials.", None
+            try:
+                port = parsed.port
+            except ValueError:
+                return False, "Blocked: invalid port.", None
+            eff = port if port is not None else (443 if parsed.scheme == "https" else 80)
+            return True, "", ValidatedURL(
+                original=str(url).strip(),
+                scheme=parsed.scheme,
+                hostname=host,
+                port=eff,
+                parsed=parsed,
+            )
+        return ok, reason, validated
 
     def _resolve(hostname: str, port: int):
         if hostname in {"127.0.0.1", "localhost"}:
             return True, "", "127.0.0.1"
-        from web_search.security import resolve_host as real_resolve
-
         return real_resolve(hostname, port)
 
+    monkeypatch.setattr("web_search.http.validate_http_url", _validate)
     monkeypatch.setattr("web_search.http.resolve_host", _resolve)
     return http_server
 
