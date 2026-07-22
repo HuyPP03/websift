@@ -15,8 +15,18 @@ from web_search.models import (
     FetchResult,
     SearchRequest,
     SearchResponse,
-    SearchResult,
 )
+from web_search.providers.base import SearchProvider
+from web_search.providers.errors import (
+    ProviderAuthError,
+    ProviderError,
+    ProviderImportError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+    sanitize_provider_message,
+)
+from web_search.providers.registry import get_default_provider
 
 _GITHUB_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 _GITHUB_NON_OWNER_SEGMENTS = {
@@ -100,10 +110,30 @@ def process_fetched_body(
     return rendered, truncated
 
 
+def _provider_error_to_response(exc: ProviderError) -> tuple[str, str]:
+    """Map provider exceptions to (ErrorCategory, public error_message)."""
+    msg = sanitize_provider_message(exc.message or str(exc))
+    if isinstance(exc, ProviderImportError):
+        return ErrorCategory.PROVIDER_IMPORT, msg
+    if isinstance(exc, ProviderAuthError):
+        category = ErrorCategory.AUTH
+    elif isinstance(exc, ProviderRateLimitError):
+        category = ErrorCategory.RATE_LIMIT
+    elif isinstance(exc, ProviderTimeoutError):
+        category = ErrorCategory.TIMEOUT
+    elif isinstance(exc, ProviderUnavailableError):
+        category = ErrorCategory.UNAVAILABLE
+    else:
+        category = ErrorCategory.PROVIDER
+    if msg.startswith("Search failed:") or msg.startswith("Error:"):
+        return category, msg
+    return category, f"Search failed: {msg}"
+
+
 class WebSearchClient:
     """
     Self-contained web search + page fetch.
-    No API key required. Uses DuckDuckGo (ddgs) for search,
+    No API key required. Uses DuckDuckGo (ddgs) for search by default,
     urllib for fetch, with SSRF protection + DNS pinning.
     """
 
@@ -112,10 +142,12 @@ class WebSearchClient:
         max_results: int = 5,
         timeout: int = 30,
         max_page_chars: int = MAX_PAGE_CHARS,
+        provider: SearchProvider | None = None,
     ):
         self.max_results = max_results
         self.timeout = timeout
         self.max_page_chars = max_page_chars
+        self._provider = provider if provider is not None else get_default_provider(timeout=timeout)
 
     def search(self, query: str) -> str:
         return format_search_response(self.search_structured(query))
@@ -133,36 +165,21 @@ class WebSearchClient:
                 error_message="No query provided.",
             )
         try:
-            from ddgs import DDGS
-        except ImportError:
+            results = self._provider.search(request)
+        except ProviderError as e:
+            category, message = _provider_error_to_response(e)
             return SearchResponse(
                 request=request,
-                error_category=ErrorCategory.PROVIDER_IMPORT,
-                error_message="Error: ddgs not installed. Run: pip install ddgs",
+                error_category=category,
+                error_message=message,
             )
-        try:
-            raw = DDGS(timeout=self.timeout).text(request.query, max_results=self.max_results)
         except Exception as e:
             return SearchResponse(
                 request=request,
                 error_category=ErrorCategory.PROVIDER,
-                error_message=f"Search failed: {e}",
+                error_message=f"Search failed: {sanitize_provider_message(str(e))}",
             )
-        if not raw:
-            return SearchResponse(request=request, results=())
-
-        results: list[SearchResult] = []
-        for i, row in enumerate(raw, start=1):
-            results.append(
-                SearchResult(
-                    title=str(row.get("title", "") or ""),
-                    url=str(row.get("href", "") or ""),
-                    snippet=str(row.get("body", "") or ""),
-                    rank=i,
-                    source="ddgs",
-                )
-            )
-        return SearchResponse(request=request, results=tuple(results))
+        return SearchResponse(request=request, results=tuple(results or ()))
 
     def fetch_structured(self, url: str) -> FetchResult:
         """Internal structured fetch; public ``fetch()`` formats this to ``str``."""
