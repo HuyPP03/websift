@@ -157,12 +157,16 @@ def allow_loopback_fetch(monkeypatch: pytest.MonkeyPatch, http_server):
             except ValueError:
                 return False, "Blocked: invalid port.", None
             eff = port if port is not None else (443 if parsed.scheme == "https" else 80)
-            return True, "", ValidatedURL(
-                original=str(url).strip(),
-                scheme=parsed.scheme,
-                hostname=host,
-                port=eff,
-                parsed=parsed,
+            return (
+                True,
+                "",
+                ValidatedURL(
+                    original=str(url).strip(),
+                    scheme=parsed.scheme,
+                    hostname=host,
+                    port=eff,
+                    parsed=parsed,
+                ),
             )
         return ok, reason, validated
 
@@ -203,10 +207,7 @@ def minimal_pdf_bytes(text: str = "hello pdf") -> bytes:
         b"0000000000 00000 n \n"
     )
     # Offsets above are approximate; pypdf may still open via rebuild. Magic is enough for many tests.
-    trailer = (
-        b"trailer<< /Size 6 /Root 1 0 R >>\n"
-        b"startxref\n" + str(xref_offset).encode() + b"\n%%EOF\n"
-    )
+    trailer = b"trailer<< /Size 6 /Root 1 0 R >>\nstartxref\n" + str(xref_offset).encode() + b"\n%%EOF\n"
     return body + xref + trailer
 
 

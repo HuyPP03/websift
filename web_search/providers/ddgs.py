@@ -7,11 +7,11 @@ from dataclasses import dataclass
 from web_search.models import SearchRequest, SearchResult
 from web_search.providers.base import ProviderCapabilities, validate_request_capabilities
 from web_search.providers.errors import (
+    ProviderError,
     ProviderImportError,
     ProviderResponseError,
     ProviderTimeoutError,
     ProviderUnavailableError,
-    ProviderError,
     sanitize_provider_message,
 )
 

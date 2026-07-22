@@ -5,27 +5,115 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
     steps:
-      - name: Checkout repository
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package + dev tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Ruff check
+        run: ruff check web_search tests
+
+      - name: Ruff format check
+        run: ruff format --check web_search tests
+
+      - name: Pytest (offline suite + coverage)
+        run: |
+          python -m pytest \
+            --cov=web_search \
+            --cov-report=term-missing \
+            --cov-fail-under=85 \
+            -m "not live and not provider"
+
+  package:
+    name: Build package + smoke
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
-      - name: Install build dependencies
-        run: pip install build twine
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
 
-      - name: Build package
+      - name: Build sdist and wheel
         run: python -m build
 
-      - name: Check package distribution
+      - name: Twine check
         run: twine check dist/*
 
-      - name: List built files
+      - name: List artifacts
         run: ls -lh dist/
+
+      - name: Install wheel in clean venv + smoke
+        run: |
+          python -m venv /tmp/websift-smoke
+          /tmp/websift-smoke/bin/pip install --upgrade pip
+          /tmp/websift-smoke/bin/pip install dist/websift-*.whl
+          /tmp/websift-smoke/bin/python - <<'PY'
+          import web_search
+          from web_search import WebSearchClient
+          from importlib.metadata import version
+          from web_search.server import create_server
+          from web_search.settings import AppSettings, ServerSettings
+
+          assert web_search.__version__ == version("websift"), (
+              web_search.__version__,
+              version("websift"),
+          )
+          client = WebSearchClient()
+          assert client.max_results == 5
+          assert client.search("") == "No query provided."
+          assert client.fetch("") == "No URL provided."
+
+          app = create_server(
+              AppSettings(server=ServerSettings(host="127.0.0.1", transport="stdio")),
+              warn_public_bind=False,
+          )
+          assert app.transport == "stdio"
+          assert callable(app.web_search)
+          assert callable(app.web_fetch)
+          print("smoke ok", web_search.__version__)
+          PY
+          /tmp/websift-smoke/bin/websift --help 2>/dev/null || true
+          test -x /tmp/websift-smoke/bin/websift
+          echo "console entry: websift present"
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/

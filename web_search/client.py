@@ -175,9 +175,7 @@ class WebSearchClient:
             self._fetch_timeout = float(timeout)
             self._max_fetch_bytes = MAX_FETCH_BYTES
             self._max_pdf_fetch_bytes = MAX_PDF_FETCH_BYTES
-            self._provider = (
-                provider if provider is not None else get_default_provider(timeout=timeout)
-            )
+            self._provider = provider if provider is not None else get_default_provider(timeout=timeout)
 
     def search(self, query: str) -> str:
         return format_search_response(self.search_structured(query))

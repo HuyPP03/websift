@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from web_search.client import WebSearchClient, _GITHUB_README_HEADERS
+from web_search.client import _GITHUB_README_HEADERS, WebSearchClient
 from web_search.models import ErrorCategory, FetchResult
 from web_search.provider_http import ProviderHttpClient, ProviderHttpConfig, is_secret_header_name
 

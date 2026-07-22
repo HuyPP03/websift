@@ -64,8 +64,8 @@ class TestSearch:
         assert "Call fetch(url)" in out
 
     def test_no_results(self, monkeypatch: pytest.MonkeyPatch):
-        import types
         import sys
+        import types
 
         class FakeDDGS:
             def __init__(self, timeout=None):
@@ -80,8 +80,8 @@ class TestSearch:
         assert WebSearchClient().search("nothing") == "No results found."
 
     def test_search_exception(self, monkeypatch: pytest.MonkeyPatch):
-        import types
         import sys
+        import types
 
         class FakeDDGS:
             def __init__(self, timeout=None):

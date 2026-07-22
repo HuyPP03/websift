@@ -3,17 +3,28 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
-  # Hoặc chạy manual từ Actions tab
   workflow_dispatch:
 
+concurrency:
+  group: publish-pypi-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  quality:
+    name: Quality gate
+    uses: ./.github/workflows/build-test.yml
+
   publish:
+    name: Publish
+    needs: quality
     runs-on: ubuntu-latest
+    environment: pypi
     permissions:
-      # Cần để sign packages với Sigstore
       id-token: write
+      contents: read
+
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -22,12 +33,27 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
-      - name: Install build dependencies
-        run: pip install build twine
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
 
-      - name: Build package
+      - name: Verify release tag matches package version
+        if: github.event_name == 'release'
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          TAG_VERSION="${TAG#v}"
+          PKG_VERSION="$(python -c 'from web_search import __version__; print(__version__)')"
+          echo "tag=${TAG} tag_version=${TAG_VERSION} package=${PKG_VERSION}"
+          test "${TAG_VERSION}" = "${PKG_VERSION}"
+
+      - name: Build from clean checkout
         run: python -m build
+
+      - name: Twine check
+        run: twine check dist/*
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

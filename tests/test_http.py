@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import gzip
 import io
+import urllib.error
 import zlib
 from http.server import BaseHTTPRequestHandler
 from unittest.mock import MagicMock
 
 import pytest
-import urllib.error
 
 from web_search.http import (
     decompress_body,
@@ -660,8 +660,9 @@ class TestExtractPdfText:
         assert out.startswith("abcdefghij")
 
     def test_no_pdfminer_import(self):
-        import web_search.http as http_mod
         import inspect
+
+        import web_search.http as http_mod
 
         src = inspect.getsource(http_mod)
         assert "pdfminer" not in src

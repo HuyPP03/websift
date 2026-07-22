@@ -78,13 +78,13 @@ MCP (Model Context Protocol) là giao thức chuẩn để kết nối AI agents
 ### Điểm mạnh cốt lõi
 
 - **🐍 Dùng như thư viện Python** — `pip install websift` rồi import trực tiếp vào code. Không cần server, không cần Docker, không cần MCP.
-- **🆓 Hoàn toàn miễn phí** — Không cần API key, không cần đăng ký, không có giới hạn từ nhà cung cấp bên thứ ba. DuckDuckGo miễn phí, và server này cũng miễn phí.
+- **🆓 Miễn phí (mặc định)** — Provider **DDGS** mặc định không cần API key hay đăng ký. DuckDuckGo và các site đích vẫn có thể throttle/block.
 - **🪶 Siêu nhẹ** — Chỉ một tiến trình Python, ~4 thư viện phụ thuộc, chạy trong container Docker nhỏ (`python:3.12-slim` ≈ 150 MB).
-- **🔒 Bảo mật mặc định** — Chống SSRF (Server-Side Request Forgery) bằng cách chặn IP riêng, DNS pinning, xác thực SNI, giới hạn redirect, và kiểm tra loại nội dung.
+- **🔒 Bảo mật mặc định** — Chống SSRF (global-only IP, multi-answer DNS, không userinfo), DNS pinning + SNI, re-validate redirect, giới hạn body/decompress, kiểm tra content-type.
 - **🌐 Tương thích mọi MCP Client** — Hoạt động với bất kỳ client MCP nào: VS Code, Claude Desktop, Claude Code, Cursor, Windsurf, JetBrains, và các agent tùy chỉnh.
-- **📄 Trích xuất thông minh** — HTML → Markdown sạch qua BeautifulSoup, PDF → text qua pypdf/pdfminer, phát hiện file nhị phân, tự động phát hiện charset.
-- **🐙 Lối tắt GitHub README** — Khi fetch URL `github.com/owner/repo`, tự động dùng GitHub API để lấy README gốc.
-- **🏠 Tự chủ (Self-hosted)** — Kiểm soát hoàn toàn dữ liệu của bạn. Không có lưu lượng nào được chuyển qua dịch vụ bên thứ ba.
+- **📄 Trích xuất thông minh** — HTML → Markdown qua BeautifulSoup (main-content), PDF → text **chỉ pypdf**, phát hiện file nhị phân, charset BOM → HTTP → meta → UTF-8.
+- **🐙 Lối tắt GitHub README** — Fetch `github.com/owner/repo` dùng GitHub API (header không credential).
+- **🏠 Tự chủ (Self-hosted)** — Bạn tự chạy process; vẫn có **request ra ngoài** tới search provider và URL fetch.
 
 ### Phù hợp cho những ai?
 
@@ -111,8 +111,8 @@ MCP (Model Context Protocol) là giao thức chuẩn để kết nối AI agents
 | **Chống SSRF**             | ✅ Tích hợp              | ⚠️ Nhà cung cấp quản lý            | ⚠️ Nhà cung cấp quản lý            | ⚠️ Nhà cung cấp quản lý            | ⚠️ Nhà cung cấp quản lý            |
 | **Kích thước container** | ~150 MB                    | N/A (SaaS)                               | ~500 MB+                                 | N/A (SaaS)                               | N/A (SaaS)                               |
 | **Thư viện phụ thuộc**  | 4 gói                     | N/A                                      | Nhiều                                   | N/A                                      | N/A                                      |
-| **Giới hạn tốc độ**    | Chỉ từ DuckDuckGo        | Giới hạn nhà cung cấp                | Giới hạn nhà cung cấp                | Giới hạn nhà cung cấp                | Giới hạn nhà cung cấp                |
-| **Quyền riêng tư**       | ✅ Kiểm soát hoàn toàn | ⚠️ Dữ liệu gửi đến nhà cung cấp | ⚠️ Dữ liệu gửi đến nhà cung cấp | ⚠️ Dữ liệu gửi đến nhà cung cấp | ⚠️ Dữ liệu gửi đến nhà cung cấp |
+| **Giới hạn tốc độ**    | Upstream DDGS / site đích | Giới hạn nhà cung cấp                | Giới hạn nhà cung cấp                | Giới hạn nhà cung cấp                | Giới hạn nhà cung cấp                |
+| **Quyền riêng tư**       | Tự host + outbound       | ⚠️ Dữ liệu gửi đến nhà cung cấp | ⚠️ Dữ liệu gửi đến nhà cung cấp | ⚠️ Dữ liệu gửi đến nhà cung cấp | ⚠️ Dữ liệu gửi đến nhà cung cấp |
 
 ### Khi nào nên chọn cái gì?
 
@@ -122,7 +122,7 @@ MCP (Model Context Protocol) là giao thức chuẩn để kết nối AI agents
 | Cần**scrape sâu** (trang render JS, sitemap)                             | Firecrawl                   |
 | Cần**tìm kiếm ngữ nghĩa** (AI-powered relevance)                      | Exa                         |
 | Muốn tìm kiếm**tối ưu cho agent** (chế độ `extract` của Tavily) | Tavily                      |
-| Cần**quyền riêng tư tối đa** (tự chủ, không gọi bên ngoài)     | **websift** ✅ |
+| Muốn**tự host** (vẫn có outbound search/fetch)                   | **websift** ✅ |
 | Đang xây dựng **AI agent tùy chỉnh** với hạ tầng tối thiểu      | **websift** ✅ |
 
 ---
@@ -139,29 +139,37 @@ MCP (Model Context Protocol) là giao thức chuẩn để kết nối AI agents
 │   Cursor…)  │                                 │
 └─────────────┘                    ┌────────────┴─────────┐
                                    │  WebSearchClient     │
-┌────────────┐                     │                      │
-│  search()  │──► DuckDuckGo (ddgs)│                      │           
+┌────────────┐                     │  + WorkLimits        │
+│  search()  │──► SearchProvider   │                      │
+│            │    (default: DDGS)  │                      │
 │  fetch()   │──► urllib + SSRF    │                      │
-│            │    ├── html.py (BS4)│                      │
+│            │    ├── html.py      │                      │
 │            │    ├── http.py      │                      │
 │            │    ├── security.py  │                      │
 │            │    └── content.py   │                      │
 └────────────┘                     └──────────────────────┘
 ```
 
+Luồng ra ngoài: **search** → provider (mặc định DuckDuckGo qua `ddgs`); **fetch** → URL đích / GitHub API cho README. Secret provider không bao giờ đi theo page-fetch.
+
 ### Cấu trúc module
 
 ```
 web_search/
-├── __init__.py    # xuất WebSearchClient + __version__
-├── config.py      # hằng số (giới hạn kích thước, user-agent, MIME, ...)
-├── security.py    # chống SSRF: kiểm tra IP riêng, DNS resolve + pin
-├── content.py     # phát hiện loại nội dung (PDF, nhị phân, HTML)
-├── http.py        # fetch HTTP thô: theo dõi redirect, SNI pinning, giải mã charset
-├── html.py        # chuyển đổi HTML → Markdown, cắt ngắn văn bản
-├── client.py      # WebSearchClient: search / fetch / lối tắt GitHub README
-└── server.py      # MCP server module (có thể import hoặc chạy standalone)
-server.py          # điểm vào MCP server (delegate về web_search.server)
+├── __init__.py       # WebSearchClient + __version__ (nguồn version duy nhất)
+├── settings.py       # AppSettings.from_env() — không đọc env khi import
+├── concurrency.py    # WorkLimits (search/fetch/PDF)
+├── models.py         # SearchResponse / FetchResult nội bộ
+├── config.py         # giới hạn kích thước, user-agent, MIME
+├── security.py       # SSRF: global-only IP, multi-answer DNS, không userinfo
+├── content.py        # phát hiện loại nội dung (PDF, nhị phân, HTML)
+├── http.py           # page fetch: redirect, DNS pin + SNI, body/decompress caps
+├── html.py           # HTML → Markdown, main content, truncate
+├── client.py         # façade search/fetch công khai
+├── provider_http.py  # transport credential cho provider (tách page fetch)
+├── providers/        # contract SearchProvider, registry, adapter DDGS
+└── server.py         # create_server / ServerApp / main()
+server.py             # entry mỏng → web_search.server:main
 ```
 
 ---
@@ -197,11 +205,17 @@ docker run -d --name websift -p 8787:8787 websift
 ### Tùy chọn 4: Python trực tiếp (Không cần Docker)
 
 ```bash
-# Cài đặt phụ thuộc
+# Khuyến nghị: cài package (editable khi dev)
+pip install -e ".[dev]"
+
+# Hoặc chỉ runtime deps (mirror pyproject.toml)
 pip install -r requirements.txt
+pip install -e .
 
 # Chạy server
-python server.py
+websift
+# python -m web_search.server
+# python server.py
 ```
 
 ---
@@ -288,7 +302,7 @@ Snippet: The Python 3.12 release includes bug fixes and...
 Lấy nội dung từ URL và trả về văn bản đọc được. Xử lý:
 
 - **Trang HTML** → chuyển thành Markdown sạch (BeautifulSoup, trích xuất nội dung chính)
-- **Tệp PDF** → trích xuất text qua pypdf / pdfminer
+- **Tệp PDF** → trích xuất text **chỉ qua pypdf**
 - **Văn bản thuần / JSON / XML** → trả về nguyên vẹn
 - **Repo GitHub** → tự động lấy README qua GitHub API
 - **Tệp nhị phân** → phát hiện và chặn (hình ảnh, tệp thực thi, archive)
@@ -320,6 +334,10 @@ The Python programming language...
 | `SEARCH_TIMEOUT_SECONDS` | `30`              | Timeout search (giây)                                                   |
 | `FETCH_TIMEOUT_SECONDS`  | `30`              | Timeout fetch trang (giây)                                              |
 | `SEARCH_TIMEOUT`         | (alias)             | **Deprecated**: nếu set và thiếu timeout cụ thể thì map cả hai |
+| `PAGE_MAX_CHARS`         | `32000`           | Số ký tự tối đa trả về từ fetch                                 |
+| `SEARCH_MAX_CONCURRENCY` | `8`               | Số search đồng thời tối đa                                      |
+| `FETCH_MAX_CONCURRENCY`  | `16`              | Số fetch trang đồng thời tối đa                                 |
+| `PDF_MAX_CONCURRENCY`    | `2`               | Số parse PDF đồng thời tối đa                                   |
 
 ### Giới hạn nội bộ
 
@@ -567,8 +585,8 @@ Server này đặc biệt phù hợp cho Agentic AI vì:
 
 - **🎯 Công cụ xác định** — `web_search` và `web_fetch` có đầu vào và đầu ra rõ ràng, dễ dự đoán. Agent có thể gọi chúng một cách tin cậy.
 - **🔑 Không cần xác thực** — Agent không cần quản lý API key, giảm độ phức tạp đáng kể.
-- **📦 Tự chứa** — Một container duy nhất, không có phụ thuộc bên ngoài ngoài DuckDuckGo.
-- **🛡️ An toàn SSRF** — Agent có thể fetch URL một cách an toàn mà không gây rủi ro cho mạng nội bộ.
+- **📦 Tự host** — Một process/container; vẫn cần HTTPS ra ngoài cho search và fetch.
+- **🛡️ An toàn SSRF** — Chính sách DNS global-only giảm rủi ro lộ mạng nội bộ từ URL do agent cung cấp.
 - **📝 Đầu ra Markdown** — Văn bản sạch, có cấu trúc, LLM có thể xử lý hiệu quả.
 - **🌐 Đa số trang web fetch được** — Hỗ trợ HTML, PDF, text, JSON, XML, và cả GitHub README. Hầu hết nội dung web đều có thể đọc được.
 
@@ -578,21 +596,23 @@ Server này đặc biệt phù hợp cho Agentic AI vì:
 
 ### Cơ chế bảo vệ tích hợp
 
-| Bảo vệ                           | Cách hoạt động                                                                                |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------- |
-| **Chống SSRF**              | Tất cả IP được giải quyết đều được kiểm tra với dải IP riêng/loopback/link-local  |
-| **DNS Pinning**              | DNS resolution được ghim vào IP đầu tiên; xác thực SNI đảm bảo chứng chỉ khớp      |
-| **Giới hạn Redirect**      | Tối đa 5 redirect để ngăn vòng lặp redirect và bypass SSRF                                |
-| **Kiểm tra Scheme**         | Chỉ cho phép scheme`http://` và `https://`                                                 |
-| **Phát hiện nhị phân**   | Hình ảnh, tệp thực thi, archive, và nội dung nhị phân khác được phát hiện và chặn |
-| **Giới hạn kích thước** | 2 MB cho trang thường, 20 MB cho PDF, giới hạn 32,000 ký tự đầu ra                        |
-| **Phát hiện Charset**      | Phát hiện BOM (UTF-8/16/32), phân tích header Content-Type, fallback thẻ meta                |
+| Bảo vệ                             | Cách hoạt động                                                                                     |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| **Chống SSRF**                | **Mọi** DNS answer phải là IP global unicast; private/loopback/link-local/special-use bị từ chối |
+| **Không userinfo**              | Credential trong authority (`user:pass@host`) bị reject                                              |
+| **DNS Pinning + SNI**           | Kết nối tới IP đã pin đã validate; TLS SNI/hostname khớp host yêu cầu                            |
+| **Re-check redirect**           | Mỗi redirect chạy lại URL + multi-answer DNS (tối đa 5 hop)                                        |
+| **Phát hiện nhị phân**     | Hình ảnh, executable, archive bị chặn                                                               |
+| **Giới hạn kích thước**   | Cap body/decompress; 2 MB trang thường, 20 MB PDF, 32,000 ký tự đầu ra mặc định                |
+| **Thứ tự charset**             | BOM → HTTP `Content-Type` → HTML meta → UTF-8                                                      |
+| **Ranh giới credential**      | Secret provider chỉ trong provider HTTP; page fetch không kế thừa                                   |
 
 ### Lưu ý về mạng
 
-- Server bind vào `127.0.0.1` mặc định. Chỉ set `MCP_HOST=0.0.0.0` khi cố ý expose (ví dụ Docker).
-- Không có xác thực tích hợp — đặt behind reverse proxy (nginx, Caddy) nếu phơi ra bên ngoài.
-- Docker Compose cô lập server trong mạng container riêng.
+- Bind `127.0.0.1` mặc định. Chỉ `MCP_HOST=0.0.0.0` khi cố ý expose (ví dụ Docker); non-loopback emit `UserWarning`.
+- **0.2.0 chưa có auth tích hợp** — không expose MCP HTTP công khai nếu không có reverse proxy (hoặc auth sau này). Ưu tiên `stdio` hoặc loopback + client local.
+- Search và fetch luôn tạo **lưu lượng ra ngoài** (provider + site đích). Không phải search offline air-gapped.
+- Docker Compose cô lập process trong mạng container; image vẫn có thể bind `0.0.0.0` trong container để publish port.
 
 ---
 
@@ -602,44 +622,69 @@ Server này đặc biệt phù hợp cho Agentic AI vì:
 
 ```
 websift/
-├── pyproject.toml          # Metadata package, dependencies, console script
-├── docker-compose.yml      # Cấu hình Docker Compose
-├── Dockerfile              # Container Python 3.12-slim
-├── requirements.txt        # Phụ thuộc Python
-├── server.py               # Điểm vào MCP server (delegate về web_search.server)
+├── pyproject.toml          # Metadata (dynamic version), deps, console script
+├── CHANGELOG.md            # Keep a Changelog
+├── docker-compose.yml      # Docker Compose
+├── Dockerfile              # Python 3.12-slim
+├── requirements.txt        # Mirror runtime deps (ưu tiên pyproject.toml)
+├── server.py               # Entry mỏng → web_search.server:main
 ├── .env.example            # Mẫu biến môi trường
-├── .mcp.json               # Cấu hình MCP cho VS Code
+├── .github/workflows/      # Matrix build/test + publish PyPI
 ├── README.md               # Tài liệu tiếng Anh
 ├── docs/
 │   └── README.vi.md        # Tài liệu tiếng Việt (tệp này)
+├── tests/                  # Suite pytest offline (markers: live, provider)
 └── web_search/
-    ├── __init__.py         # Xuất package (WebSearchClient, __version__)
-    ├── config.py           # Hằng số và cấu hình
-    ├── security.py         # Chống SSRF và DNS pinning
-    ├── content.py          # Phát hiện loại nội dung
-    ├── http.py             # Fetch HTTP với SNI pinning
-    ├── html.py             # Chuyển đổi HTML sang Markdown
-    ├── client.py           # WebSearchClient (search + fetch)
-    └── server.py           # MCP server module (có thể import hoặc chạy standalone)
+    ├── __init__.py         # WebSearchClient, __version__
+    ├── settings.py         # AppSettings typed
+    ├── concurrency.py      # WorkLimits
+    ├── models.py           # Structured internals
+    ├── config.py           # Constants
+    ├── security.py         # SSRF / DNS
+    ├── content.py          # Content-type
+    ├── http.py             # Page fetch
+    ├── html.py             # HTML → Markdown
+    ├── client.py           # Façade công khai
+    ├── provider_http.py    # Transport credential provider
+    ├── providers/          # DDGS + registry
+    └── server.py           # create_server / main
 ```
+
+### Đặt tên (dual naming)
+
+| Bề mặt | Tên |
+| ------ | --- |
+| PyPI / CLI / Docker | `websift` |
+| Import path | `web_search` |
+| Nguồn version | `web_search.__version__` |
 
 ### Chạy local
 
 ```bash
-# Cài đặt từ PyPI
+# Cài từ PyPI
 pip install websift
 
-# Hoặc cài đặt ở chế độ editable (cho phát triển)
-pip install -e .
+# Hoặc editable + dev tools
+pip install -e ".[dev]"
 
-# Chạy như MCP server
+# Chạy MCP server
 websift
 
-# Chạy với cài đặt tùy chỉnh
+# Cài đặt tùy chỉnh
 MCP_PORT=9000 MCP_TRANSPORT=sse websift
 
-# Hoặc dùng như thư viện (không cần server)
+# Thư viện (không cần server)
 python -c "from web_search import WebSearchClient; print(WebSearchClient().search('test'))"
+```
+
+### Lint, test, build
+
+```bash
+ruff check web_search tests
+ruff format --check web_search tests
+python -m pytest --cov=web_search --cov-report=term-missing --cov-fail-under=85 -m "not live and not provider"
+python -m build
+twine check dist/*
 ```
 
 ### Chạy với Docker
@@ -661,11 +706,15 @@ docker compose down
 
 ### Hỏi: Có cần API key không?
 
-**Không.** Tìm kiếm DuckDuckGo miễn phí và không cần xác thực. Toàn bộ server chạy mà không cần bất kỳ API key nào.
+**Không với provider DDGS mặc định.** DuckDuckGo không cần key. Provider tùy chọn sau này (ví dụ Brave) có thể cần key qua settings server — **không** qua argument tool MCP.
+
+### Hỏi: Có phải unlimited / không rate limit không?
+
+**Không.** Websift không bán quota, nhưng DuckDuckGo, provider khác và site đích có thể throttle/CAPTCHA/block. MCP call đồng thời cũng bị giới hạn bởi `SEARCH_MAX_CONCURRENCY` / `FETCH_MAX_CONCURRENCY` / `PDF_MAX_CONCURRENCY`.
 
 ### Hỏi: Có thể dùng sau firewall không?
 
-Có. Server chỉ cần truy cập HTTPS ra ngoài để đến DuckDuckGo và các trang web mục tiêu. Truy cập vào chỉ cần cho endpoint MCP (cổng 8787).
+Có, nếu cho phép HTTPS ra ngoài tới search provider và site đích. Truy cập vào chỉ cần cho endpoint MCP khi dùng HTTP/SSE (mặc định loopback cổng 8787).
 
 ### Hỏi: So với Tavily hay Firecrawl thì sao?
 
@@ -673,7 +722,7 @@ Giải pháp này đơn giản hơn và miễn phí, nhưng không cung cấp re
 
 ### Hỏi: Có thể thêm xác thực không?
 
-Bản thân server không bao gồm xác thực, nhưng bạn có thể đặt behind nginx/Caddy với basic auth hoặc xác thực API key:
+**0.2.0 chưa có bearer auth tích hợp.** Không expose MCP HTTP công khai nếu không có reverse proxy (hoặc đợi release sau có auth). Ví dụ nginx basic auth:
 
 ```nginx
 location /mcp {

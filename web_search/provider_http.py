@@ -63,9 +63,7 @@ def redact_secrets(text: str) -> str:
         return ""
     s = str(text)
     s = _TOKEN_RE.sub(
-        lambda m: (m.group(1) or "") + _REDACTED
-        if m.group(1)
-        else f"{m.group(2)}={_REDACTED}",
+        lambda m: (m.group(1) or "") + _REDACTED if m.group(1) else f"{m.group(2)}={_REDACTED}",
         s,
     )
     # Query-string style key=value for common secret names.

@@ -251,8 +251,7 @@ class AppSettings:
         """Fail-fast validation (no secrets in messages)."""
         if self.server.transport not in _VALID_TRANSPORTS:
             raise SettingsError(
-                f"Invalid MCP_TRANSPORT {self.server.transport!r}. "
-                f"Allowed: {', '.join(sorted(_VALID_TRANSPORTS))}",
+                f"Invalid MCP_TRANSPORT {self.server.transport!r}. Allowed: {', '.join(sorted(_VALID_TRANSPORTS))}",
                 code="invalid_transport",
             )
         if not (1 <= self.server.port <= 65535):
@@ -324,18 +323,14 @@ class AppSettings:
         search_timeout_raw = _raw(env, "SEARCH_TIMEOUT_SECONDS")
         fetch_timeout_raw = _raw(env, "FETCH_TIMEOUT_SECONDS")
         if search_timeout_raw is not None:
-            search_timeout = _parse_float(
-                search_timeout_raw, key="SEARCH_TIMEOUT_SECONDS", min_value=0.001
-            )
+            search_timeout = _parse_float(search_timeout_raw, key="SEARCH_TIMEOUT_SECONDS", min_value=0.001)
         elif legacy_timeout is not None:
             search_timeout = legacy_timeout
         else:
             search_timeout = 30.0
 
         if fetch_timeout_raw is not None:
-            fetch_timeout = _parse_float(
-                fetch_timeout_raw, key="FETCH_TIMEOUT_SECONDS", min_value=0.001
-            )
+            fetch_timeout = _parse_float(fetch_timeout_raw, key="FETCH_TIMEOUT_SECONDS", min_value=0.001)
         elif legacy_timeout is not None:
             fetch_timeout = legacy_timeout
         else:
@@ -384,25 +379,17 @@ class AppSettings:
                 time_range=_get_optional_str(env, "SEARCH_TIME_RANGE"),
                 fallback_providers=_parse_csv(_get_optional_str(env, "SEARCH_FALLBACK_PROVIDERS")),
                 retry_max=_get_int(env, "SEARCH_RETRY_MAX", 1, min_value=0),
-                retry_backoff_seconds=_get_float(
-                    env, "SEARCH_RETRY_BACKOFF_SECONDS", 0.5, min_value=0.0
-                ),
-                allow_unsupported_filters=_get_bool(
-                    env, "SEARCH_ALLOW_UNSUPPORTED_FILTERS", False
-                ),
+                retry_backoff_seconds=_get_float(env, "SEARCH_RETRY_BACKOFF_SECONDS", 0.5, min_value=0.0),
+                allow_unsupported_filters=_get_bool(env, "SEARCH_ALLOW_UNSUPPORTED_FILTERS", False),
                 base_url=base_url,
                 api_key=api_key,
             ),
             fetch=FetchSettings(
                 timeout_seconds=fetch_timeout,
                 max_bytes=_get_int(env, "FETCH_MAX_BYTES", MAX_FETCH_BYTES, min_value=1),
-                max_pdf_bytes=_get_int(
-                    env, "FETCH_MAX_PDF_BYTES", MAX_PDF_FETCH_BYTES, min_value=1
-                ),
+                max_pdf_bytes=_get_int(env, "FETCH_MAX_PDF_BYTES", MAX_PDF_FETCH_BYTES, min_value=1),
                 max_redirects=_get_int(env, "FETCH_MAX_REDIRECTS", MAX_REDIRECTS, min_value=0),
-                max_compressed_bytes=_get_int(
-                    env, "FETCH_MAX_COMPRESSED_BYTES", MAX_COMPRESSED_BYTES, min_value=1
-                ),
+                max_compressed_bytes=_get_int(env, "FETCH_MAX_COMPRESSED_BYTES", MAX_COMPRESSED_BYTES, min_value=1),
                 max_decompressed_bytes=_get_int(
                     env, "FETCH_MAX_DECOMPRESSED_BYTES", MAX_DECOMPRESSED_BYTES, min_value=1
                 ),

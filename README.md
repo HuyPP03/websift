@@ -60,13 +60,13 @@ That's it — simple, focused, and reliable.
 
 ### Core Strengths
 
-- **🆓 Completely Free** — No API keys, no subscriptions, no rate limits from a third-party provider. DuckDuckGo is free, and this server is free.
+- **🆓 Completely Free (default)** — Default **DDGS** provider needs no API key or subscription. Upstream DuckDuckGo and target sites may still rate-limit or block clients.
 - **🪶 Lightweight** — Single Python process, ~4 dependencies, runs in a tiny Docker container (`python:3.12-slim` ≈ 150 MB).
-- **🔒 Secure by Default** — SSRF protection with private-IP blocking, DNS resolution pinning, SNI validation, redirect limits, and content-type validation.
+- **🔒 Secure by Default** — SSRF protection (global-only IP policy, multi-answer DNS validation, no URL userinfo), DNS pinning + SNI, redirect re-validation, body/decompress limits, and content-type checks.
 - **🌐 Universal MCP Compatibility** — Works with any MCP client (VS Code, Claude, Cursor, Windsurf, JetBrains, custom agents, etc.).
-- **📄 Smart Content Extraction** — HTML → clean Markdown via BeautifulSoup, PDF → text via pypdf/pdfminer, binary detection, charset auto-detection.
-- **🐙 GitHub README Shortcut** — Fetching a `github.com/owner/repo` URL automatically uses the GitHub API to grab the raw README.
-- **🏠 Self-Hosted** — Full control over your data. No traffic routed through third-party services.
+- **📄 Smart Content Extraction** — HTML → Markdown via BeautifulSoup (main-content selection), PDF → text via **pypdf only**, binary detection, charset order BOM → HTTP → meta → UTF-8.
+- **🐙 GitHub README Shortcut** — Fetching a `github.com/owner/repo` URL uses the GitHub API for the raw README (non-credential headers only).
+- **🏠 Self-Hosted** — You run the process; still makes **outbound** requests to the search provider and fetched URLs.
 
 ### Ideal For
 
@@ -91,8 +91,8 @@ That's it — simple, focused, and reliable.
 | **SSRF Protection**  | ✅ Built-in              | ⚠️ Managed                | ⚠️ Managed          | ⚠️ Managed          | ⚠️ Managed                |
 | **Container Size**   | ~150 MB                  | N/A (SaaS)                  | ~500 MB+              | N/A (SaaS)            | N/A (SaaS)                  |
 | **Dependencies**     | 4 packages               | N/A                         | Many                  | N/A                   | N/A                         |
-| **Rate Limits**      | DuckDuckGo only          | Provider limits             | Provider limits       | Provider limits       | Provider limits             |
-| **Privacy**          | ✅ Full control          | ⚠️ Data to provider       | ⚠️ Data to provider | ⚠️ Data to provider | ⚠️ Data to provider       |
+| **Rate Limits**      | Upstream DDGS / sites    | Provider limits             | Provider limits       | Provider limits       | Provider limits             |
+| **Privacy**          | Self-hosted + outbound   | ⚠️ Data to provider       | ⚠️ Data to provider | ⚠️ Data to provider | ⚠️ Data to provider       |
 
 ### When to Choose What
 
@@ -102,7 +102,7 @@ That's it — simple, focused, and reliable.
 | You need**deep scraping** (JS-rendered pages, sitemaps)          | Firecrawl                   |
 | You need**semantic search** (AI-powered relevance)               | Exa                         |
 | You want**agentic-optimized** search (Tavily's `extract` mode) | Tavily                      |
-| You need**maximum privacy** (self-hosted, no external calls)     | **websift** ✅ |
+| You want**self-hosted** control (still outbound search/fetch)    | **websift** ✅ |
 | You're building a**custom AI agent** with minimal infra          | **websift** ✅ |
 
 ---
@@ -117,29 +117,37 @@ That's it — simple, focused, and reliable.
 │   Cursor…)  │                                 │
 └─────────────┘                    ┌────────────┴─────────┐
                                    │  WebSearchClient     │
-┌────────────┐                     │                      │
-│  search()  │──► DuckDuckGo (ddgs)│                      │   
+┌────────────┐                     │  + WorkLimits        │
+│  search()  │──► SearchProvider   │                      │
+│            │    (default: DDGS)  │                      │
 │  fetch()   │──► urllib + SSRF    │                      │
-│            │    ├── html.py (BS4)│                      │
+│            │    ├── html.py      │                      │
 │            │    ├── http.py      │                      │
 │            │    ├── security.py  │                      │
 │            │    └── content.py   │                      │
 └────────────┘                     └──────────────────────┘
 ```
 
+Outbound data flow: **search** → configured provider (default DuckDuckGo via `ddgs`); **fetch** → target URL / GitHub API for README shortcuts. Provider secrets never ride the page-fetch path.
+
 ### Module Structure
 
 ```
 web_search/
-├── __init__.py    # exports WebSearchClient + __version__
-├── config.py      # constants (size limits, user-agents, MIME types, ...)
-├── security.py    # SSRF protection: private-IP check, DNS resolve + pin
-├── content.py     # content-type detection (PDF, binary, HTML heuristics)
-├── http.py        # raw HTTP fetch: redirect following, SNI pinning, charset decode
-├── html.py        # HTML → Markdown conversion, text truncation
-├── client.py      # WebSearchClient: search / fetch / GitHub README shortcut
-└── server.py      # MCP server module (FastMCP, importable or standalone)
-server.py          # thin entry point → delegates to web_search.server
+├── __init__.py       # WebSearchClient + __version__ (single version source)
+├── settings.py       # AppSettings.from_env() — no env read on import
+├── concurrency.py    # WorkLimits (search/fetch/PDF bounds)
+├── models.py         # SearchResponse / FetchResult internals
+├── config.py         # size limits, user-agents, MIME types
+├── security.py       # SSRF: global-only IPs, multi-answer DNS, no userinfo
+├── content.py        # content-type detection (PDF, binary, HTML heuristics)
+├── http.py           # page fetch: redirects, DNS pin + SNI, body/decompress caps
+├── html.py           # HTML → Markdown, main content, truncation
+├── client.py         # public search/fetch façade
+├── provider_http.py  # credentialed provider transport (isolated from page fetch)
+├── providers/        # SearchProvider contract, registry, DDGS adapter
+└── server.py         # create_server / ServerApp / main()
+server.py             # thin entry → web_search.server:main
 ```
 
 ---
@@ -175,11 +183,17 @@ docker run -d --name websift -p 8787:8787 websift
 ### Option 4: Local Python (No Docker)
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Recommended: install the package (editable for development)
+pip install -e ".[dev]"
 
-# Run the server
-python server.py
+# Or runtime deps only (mirrors pyproject.toml)
+pip install -r requirements.txt
+pip install -e .
+
+# Run the server (console entry or module)
+websift
+# python -m web_search.server
+# python server.py
 ```
 
 ---
@@ -265,10 +279,10 @@ Snippet: The Python 3.12 release includes bug fixes and...
 
 Fetches a URL and returns readable text content. Handles:
 
-- **HTML pages** → converted to clean Markdown (BeautifulSoup, main-content extraction)
-- **PDF files** → text extracted via pypdf / pdfminer
+- **HTML pages** → Markdown (BeautifulSoup block-flow + main-content selection)
+- **PDF files** → text extracted via **pypdf only**
 - **Plain text / JSON / XML** → returned as-is
-- **GitHub repos** → automatically fetches README via GitHub API
+- **GitHub repos** → README via GitHub API (non-credential headers)
 - **Binary files** → detected and blocked (images, executables, archives)
 
 **Example:**
@@ -293,11 +307,15 @@ The Python programming language...
 | `MCP_HOST`               | `127.0.0.1`       | Bind address (use `0.0.0.0` only when intentionally exposing)      |
 | `MCP_PORT`               | `8787`            | Listen port                                                          |
 | `MCP_TRANSPORT`          | `streamable-http` | Transport: `streamable-http`, `sse`, or `stdio`                  |
-| `SEARCH_PROVIDER`        | `ddgs`            | Server-wide search provider (allowlisted)                            |
+| `SEARCH_PROVIDER`        | `ddgs`            | Server-wide search provider (**allowlisted**; not settable per tool call) |
 | `SEARCH_MAX_RESULTS`     | `5`               | Max search results returned                                          |
 | `SEARCH_TIMEOUT_SECONDS` | `30`              | Search timeout (seconds)                                             |
 | `FETCH_TIMEOUT_SECONDS`  | `30`              | Page fetch timeout (seconds)                                         |
 | `SEARCH_TIMEOUT`         | (alias)             | **Deprecated**: if set and specific timeouts omit, maps to both |
+| `PAGE_MAX_CHARS`         | `32000`           | Max characters returned from fetch                                   |
+| `SEARCH_MAX_CONCURRENCY` | `8`               | Max concurrent search operations                                     |
+| `FETCH_MAX_CONCURRENCY`  | `16`              | Max concurrent page fetches                                          |
+| `PDF_MAX_CONCURRENCY`    | `2`               | Max concurrent PDF parses                                            |
 
 ### Internal Limits
 
@@ -545,9 +563,9 @@ This server is particularly well-suited for agentic AI because:
 
 - **Deterministic tools** — `web_search` and `web_fetch` have clear, predictable inputs and outputs.
 - **No authentication overhead** — agents don't need to manage API keys.
-- **Self-contained** — single container, no external dependencies beyond DuckDuckGo.
-- **SSRF-safe** — agents can safely fetch URLs without risking internal network exposure.
-- **Markdown output** — clean, structured text that LLMs can process efficiently.
+- **Self-hosted** — one process/container; still needs outbound HTTPS for search and fetches.
+- **SSRF-safe** — global-only DNS policy reduces risk of internal network exposure from agent-supplied URLs.
+- **Markdown output** — structured text that LLMs can process efficiently.
 
 ---
 
@@ -555,21 +573,23 @@ This server is particularly well-suited for agentic AI because:
 
 ### Built-in Protections
 
-| Protection                  | How It Works                                                                                  |
-| --------------------------- | --------------------------------------------------------------------------------------------- |
-| **SSRF Prevention**   | All resolved IPs are checked against private/loopback/link-local ranges                       |
-| **DNS Pinning**       | DNS resolution is pinned to the first resolved IP; SNI validation ensures certificate matches |
-| **Redirect Limits**   | Maximum 5 redirects to prevent redirect loops and SSRF bypass                                 |
-| **Scheme Validation** | Only`http://` and `https://` schemes are allowed                                          |
-| **Binary Detection**  | Images, executables, archives, and other binary content are detected and blocked              |
-| **Size Limits**       | 2 MB for normal pages, 20 MB for PDFs, 32,000 chars output limit                              |
-| **Charset Detection** | BOM detection (UTF-8/16/32), Content-Type header parsing, meta tag fallback                   |
+| Protection                  | How It Works                                                                                          |
+| --------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **SSRF Prevention**   | **Every** DNS answer must be a global unicast IP; private/loopback/link-local/special-use rejected |
+| **No URL userinfo**   | Credentials in the authority (`user:pass@host`) are rejected                                        |
+| **DNS Pinning + SNI** | Connect to a validated pinned IP; TLS SNI/hostname still match the requested host                     |
+| **Redirect re-check** | Each redirect re-runs URL + multi-answer DNS validation (max 5 hops)                                  |
+| **Binary Detection**  | Images, executables, archives, and other binary content are blocked                                   |
+| **Size Limits**       | Body/decompress caps; 2 MB normal pages, 20 MB PDFs, 32,000 chars default output                      |
+| **Charset order**     | BOM → HTTP `Content-Type` → HTML meta → UTF-8                                                       |
+| **Credential boundary** | Provider secrets stay in provider HTTP; page fetch never inherits them                              |
 
 ### Network Considerations
 
-- The server binds to `127.0.0.1` by default. Set `MCP_HOST=0.0.0.0` only when intentionally exposing the port (e.g. Docker).
-- No authentication is built in — place behind a reverse proxy (nginx, Caddy) if exposing externally.
-- Docker Compose isolates the server in its own container network.
+- Binds to `127.0.0.1` by default. Set `MCP_HOST=0.0.0.0` only when intentionally exposing (e.g. Docker); a `UserWarning` is emitted for non-loopback binds.
+- **No built-in auth in 0.2.0** — remote HTTP/SSE MCP is **not** safe to expose on a public interface without a reverse proxy (or future bearer auth). Prefer `stdio` or loopback + local clients.
+- Search and fetch always generate **outbound** traffic (provider + target sites). This is not an air-gapped offline search engine.
+- Docker Compose isolates the process in a container network; the image may still bind `0.0.0.0` inside the container for port publishing.
 
 ---
 
@@ -579,26 +599,41 @@ This server is particularly well-suited for agentic AI because:
 
 ```
 websift/
-├── pyproject.toml          # Package metadata, dependencies, console script
+├── pyproject.toml          # Package metadata (dynamic version), deps, console script
+├── CHANGELOG.md            # Keep a Changelog
 ├── docker-compose.yml      # Docker Compose setup
 ├── Dockerfile              # Python 3.12-slim container
-├── requirements.txt        # Python dependencies
-├── server.py               # MCP server entry point (delegates to web_search.server)
+├── requirements.txt        # Runtime deps mirror (prefer pyproject.toml)
+├── server.py               # Thin entry → web_search.server:main
 ├── .env.example            # Environment variable template
-├── .mcp.json               # VS Code MCP configuration
+├── .github/workflows/      # Build/test matrix + PyPI publish gate
 ├── README.md               # This file
 ├── docs/
 │   └── README.vi.md        # Vietnamese documentation
+├── tests/                  # Offline pytest suite (markers: live, provider)
 └── web_search/
-    ├── __init__.py         # Package exports (WebSearchClient, __version__)
-    ├── config.py           # Constants and configuration
-    ├── security.py         # SSRF protection and DNS pinning
+    ├── __init__.py         # WebSearchClient, __version__
+    ├── settings.py         # Typed AppSettings
+    ├── concurrency.py      # WorkLimits
+    ├── models.py           # Structured internals
+    ├── config.py           # Constants
+    ├── security.py         # SSRF / DNS
     ├── content.py          # Content-type detection
-    ├── http.py             # HTTP fetching with SNI pinning
-    ├── html.py             # HTML to Markdown conversion
-    ├── client.py           # WebSearchClient (search + fetch)
-    └── server.py           # MCP server module (importable or standalone)
+    ├── http.py             # Page fetch
+    ├── html.py             # HTML → Markdown
+    ├── client.py           # Public façade
+    ├── provider_http.py    # Provider credential transport
+    ├── providers/          # DDGS + registry
+    └── server.py           # create_server / main
 ```
+
+### Naming
+
+| Surface | Name |
+| ------- | ---- |
+| PyPI / CLI / Docker brand | `websift` |
+| Import path | `web_search` |
+| Version source | `web_search.__version__` (dynamic in `pyproject.toml`) |
 
 ### Running Locally
 
@@ -606,17 +641,32 @@ websift/
 # Install from PyPI
 pip install websift
 
-# Or install in editable mode (for development)
-pip install -e .
+# Or editable + dev tools
+pip install -e ".[dev]"
 
 # Run as MCP server
 websift
 
-# Run with custom settings
+# Custom settings
 MCP_PORT=9000 MCP_TRANSPORT=sse websift
 
-# Or use as a library (no server needed)
+# Library (no server)
 python -c "from web_search import WebSearchClient; print(WebSearchClient().search('test'))"
+```
+
+### Lint, test, build
+
+```bash
+# Lint
+ruff check web_search tests
+ruff format --check web_search tests
+
+# Offline tests + coverage gate (≥85%)
+python -m pytest --cov=web_search --cov-report=term-missing --cov-fail-under=85 -m "not live and not provider"
+
+# Package
+python -m build
+twine check dist/*
 ```
 
 ### Running with Docker
@@ -638,11 +688,15 @@ docker compose down
 
 ### Q: Does this require an API key?
 
-**No.** DuckDuckGo search is free and doesn't require authentication. The entire server runs without any API keys.
+**Not for the default DDGS provider.** DuckDuckGo search needs no key. Future optional providers (e.g. Brave) may require keys via server settings — never via MCP tool arguments.
+
+### Q: Is this unlimited / no rate limits?
+
+**No.** Websift does not sell a quota, but DuckDuckGo, other providers, and target sites can throttle, CAPTCHA, or block clients. Concurrent MCP calls are also bounded by `SEARCH_MAX_CONCURRENCY` / `FETCH_MAX_CONCURRENCY` / `PDF_MAX_CONCURRENCY`.
 
 ### Q: Can I use this behind a firewall?
 
-Yes. The server only needs outbound HTTPS access to reach DuckDuckGo and target websites. Inbound access is only needed for the MCP endpoint (port 8787).
+Yes, if outbound HTTPS to the search provider and target websites is allowed. Inbound access is only needed for the MCP endpoint when using HTTP/SSE (default loopback port 8787).
 
 ### Q: How does this compare to Tavily or Firecrawl?
 
@@ -650,7 +704,7 @@ This is simpler and free, but doesn't offer JS rendering, deep scraping, or sema
 
 ### Q: Can I add authentication?
 
-The server itself doesn't include auth, but you can place it behind nginx/Caddy with basic auth or API key validation:
+**0.2.0 has no built-in bearer auth.** Do not expose remote MCP HTTP publicly without a reverse proxy (or wait for a later release with auth). Example with nginx basic auth:
 
 ```nginx
 location /mcp {
