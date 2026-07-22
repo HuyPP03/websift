@@ -236,3 +236,21 @@ class TestResolveHost:
         ok, reason, ip = resolve_host("mapped.example", 443)
         assert ok is False
         assert ip == ""
+
+
+def test_validate_http_disallow_http_scheme():
+    from web_search.security import validate_http_url
+
+    ok, reason, _ = validate_http_url("http://example.com/", allow_http=False)
+    assert ok is False
+    assert "http" in reason.lower()
+
+
+def test_validate_allowed_ports():
+    from web_search.security import validate_http_url
+
+    ok, _, v = validate_http_url("https://example.com:8443/", allowed_ports=frozenset({80, 443}))
+    assert ok is False
+    ok2, _, v2 = validate_http_url("https://example.com/", allowed_ports=frozenset({80, 443}))
+    assert ok2 is True
+    assert v2 is not None and v2.port == 443

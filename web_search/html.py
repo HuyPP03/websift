@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Iterable
 from urllib.parse import urljoin
 
@@ -54,6 +55,19 @@ _STRIP_BOILERPLATE = ("nav", "footer", "aside")
 _SKIP_TAGS = frozenset({"script", "style", "template", "noscript", "head", "svg", "iframe", "object", "embed"})
 _WS_RE = re.compile(r"[ \t\r\f\v]+")
 _BLANK_RE = re.compile(r"\n{3,}")
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_MD_EMPH_RE = re.compile(r"(\*\*|__|\*|_|`)")
+_MD_HEADING_RE = re.compile(r"(?m)^#{1,6}\s+")
+_MD_QUOTE_RE = re.compile(r"(?m)^>\s?")
+_MD_HR_RE = re.compile(r"(?m)^---\s*$")
+
+
+@dataclass(frozen=True)
+class HtmlRenderOptions:
+    include_links: bool = True
+    include_images: bool = False
+    min_main_content_chars: int = MIN_MAIN_CONTENT_CHARS
+    output_format: str = "markdown"  # markdown | text
 
 
 def html_to_markdown(
@@ -61,7 +75,17 @@ def html_to_markdown(
     main_content: bool = False,
     *,
     base_url: str | None = None,
+    include_links: bool = True,
+    include_images: bool = False,
+    min_main_content_chars: int = MIN_MAIN_CONTENT_CHARS,
+    output_format: str = "markdown",
 ) -> str:
+    opts = HtmlRenderOptions(
+        include_links=include_links,
+        include_images=include_images,
+        min_main_content_chars=min_main_content_chars,
+        output_format=(output_format or "markdown").strip().lower(),
+    )
     try:
         from bs4 import BeautifulSoup, Comment, NavigableString
     except ImportError:
@@ -70,10 +94,16 @@ def html_to_markdown(
     soup = BeautifulSoup(html, "html.parser")
     _strip_noise(soup, main_content=main_content, Comment=Comment)
 
-    root = _select_root(soup, main_content=main_content)
-    blocks = _convert_children(root, base_url=base_url, NavigableString=NavigableString)
+    root = _select_root(
+        soup,
+        main_content=main_content,
+        min_main_content_chars=opts.min_main_content_chars,
+    )
+    blocks = _convert_children(root, base_url=base_url, NavigableString=NavigableString, opts=opts)
     text = "\n\n".join(b for b in blocks if b is not None and str(b).strip() != "")
     text = _BLANK_RE.sub("\n\n", text).strip()
+    if opts.output_format == "text":
+        text = _markdownish_to_text(text)
     return text
 
 
@@ -152,7 +182,7 @@ def _strip_noise(soup, *, main_content: bool, Comment) -> None:
         comment.extract()
 
 
-def _select_root(soup, *, main_content: bool):
+def _select_root(soup, *, main_content: bool, min_main_content_chars: int = MIN_MAIN_CONTENT_CHARS):
     if not main_content:
         return soup.body or soup
 
@@ -167,30 +197,46 @@ def _select_root(soup, *, main_content: bool):
     if role_main is not None and role_main not in candidates:
         candidates.append(role_main)
 
+    threshold = max(0, int(min_main_content_chars))
     for candidate in candidates:
-        if _text_len(candidate) >= MIN_MAIN_CONTENT_CHARS:
+        if _text_len(candidate) >= threshold:
             return candidate
     return soup.body or soup
+
+
+def _markdownish_to_text(text: str) -> str:
+    """Best-effort strip of markdown markers for HTML_OUTPUT_FORMAT=text."""
+    s = _MD_LINK_RE.sub(r"\1", text)
+    s = _MD_HEADING_RE.sub("", s)
+    s = _MD_QUOTE_RE.sub("", s)
+    s = _MD_HR_RE.sub("", s)
+    s = _MD_EMPH_RE.sub("", s)
+    s = _BLANK_RE.sub("\n\n", s).strip()
+    return s
 
 
 def _text_len(el) -> int:
     return len(el.get_text(separator=" ", strip=True))
 
 
-def _convert_children(root, *, base_url: str | None, NavigableString) -> list[str]:
+def _convert_children(root, *, base_url: str | None, NavigableString, opts: HtmlRenderOptions) -> list[str]:
     if root is None:
         return []
-    return _convert_flow(list(root.children), base_url=base_url, NavigableString=NavigableString)
+    return _convert_flow(list(root.children), base_url=base_url, NavigableString=NavigableString, opts=opts)
 
 
-def _convert_flow(nodes: Iterable, *, base_url: str | None, NavigableString) -> list[str]:
+def _convert_flow(nodes: Iterable, *, base_url: str | None, NavigableString, opts: HtmlRenderOptions) -> list[str]:
     blocks: list[str] = []
     inline_buf: list = []
 
     def flush_inline() -> None:
         if not inline_buf:
             return
-        text = _normalize_inline(_render_inline_nodes(inline_buf, base_url=base_url, NavigableString=NavigableString))
+        text = _normalize_inline(
+            _render_inline_nodes(
+                inline_buf, base_url=base_url, NavigableString=NavigableString, opts=opts
+            )
+        )
         inline_buf.clear()
         if text:
             blocks.append(text)
@@ -205,22 +251,30 @@ def _convert_flow(nodes: Iterable, *, base_url: str | None, NavigableString) -> 
             continue
         if name in _BLOCK_TAGS:
             flush_inline()
-            blocks.extend(_convert_block(node, base_url=base_url, NavigableString=NavigableString))
+            blocks.extend(_convert_block(node, base_url=base_url, NavigableString=NavigableString, opts=opts))
         else:
             inline_buf.append(node)
     flush_inline()
     return blocks
 
 
-def _convert_block(el, *, base_url: str | None, NavigableString) -> list[str]:
+def _convert_block(el, *, base_url: str | None, NavigableString, opts: HtmlRenderOptions) -> list[str]:
     name = el.name
     if name in ("h1", "h2", "h3", "h4", "h5", "h6"):
         level = int(name[1])
-        text = _normalize_inline(_render_inline_nodes(el.children, base_url=base_url, NavigableString=NavigableString))
+        text = _normalize_inline(
+            _render_inline_nodes(
+                el.children, base_url=base_url, NavigableString=NavigableString, opts=opts
+            )
+        )
         return [f"{'#' * level} {text}"] if text else []
 
     if name == "p":
-        text = _normalize_inline(_render_inline_nodes(el.children, base_url=base_url, NavigableString=NavigableString))
+        text = _normalize_inline(
+            _render_inline_nodes(
+                el.children, base_url=base_url, NavigableString=NavigableString, opts=opts
+            )
+        )
         return [text] if text else []
 
     if name == "hr":
@@ -233,7 +287,7 @@ def _convert_block(el, *, base_url: str | None, NavigableString) -> list[str]:
         return [_fence_code(el)]
 
     if name == "blockquote":
-        inner_blocks = _convert_children(el, base_url=base_url, NavigableString=NavigableString)
+        inner_blocks = _convert_children(el, base_url=base_url, NavigableString=NavigableString, opts=opts)
         if not inner_blocks:
             return []
         quoted: list[str] = []
@@ -245,39 +299,52 @@ def _convert_block(el, *, base_url: str | None, NavigableString) -> list[str]:
     if name in ("ul", "ol"):
         return [
             "\n".join(
-                _convert_list(el, ordered=(name == "ol"), depth=0, base_url=base_url, NavigableString=NavigableString)
+                _convert_list(
+                    el,
+                    ordered=(name == "ol"),
+                    depth=0,
+                    base_url=base_url,
+                    NavigableString=NavigableString,
+                    opts=opts,
+                )
             )
         ]
 
     if name == "li":
         # Lone li — treat as unordered item.
         lines = _convert_list_item(
-            el, ordered=False, index=1, depth=0, base_url=base_url, NavigableString=NavigableString
+            el, ordered=False, index=1, depth=0, base_url=base_url, NavigableString=NavigableString, opts=opts
         )
         return ["\n".join(lines)] if lines else []
 
     if name == "table":
-        table = _convert_table(el, base_url=base_url, NavigableString=NavigableString)
+        table = _convert_table(el, base_url=base_url, NavigableString=NavigableString, opts=opts)
         return [table] if table else []
 
     if name in ("thead", "tbody", "tfoot", "tr", "td", "th"):
         # Only meaningful inside table converter; fall through as flow.
-        return _convert_children(el, base_url=base_url, NavigableString=NavigableString)
+        return _convert_children(el, base_url=base_url, NavigableString=NavigableString, opts=opts)
 
     if name in ("dl",):
-        return _convert_children(el, base_url=base_url, NavigableString=NavigableString)
+        return _convert_children(el, base_url=base_url, NavigableString=NavigableString, opts=opts)
 
     if name in ("dt", "dd"):
-        text = _normalize_inline(_render_inline_nodes(el.children, base_url=base_url, NavigableString=NavigableString))
+        text = _normalize_inline(
+            _render_inline_nodes(
+                el.children, base_url=base_url, NavigableString=NavigableString, opts=opts
+            )
+        )
         if not text:
             return []
         return [f"**{text}**" if name == "dt" else text]
 
     # Generic containers: recurse without double-emitting wrapper text.
-    return _convert_children(el, base_url=base_url, NavigableString=NavigableString)
+    return _convert_children(el, base_url=base_url, NavigableString=NavigableString, opts=opts)
 
 
-def _convert_list(el, *, ordered: bool, depth: int, base_url: str | None, NavigableString) -> list[str]:
+def _convert_list(
+    el, *, ordered: bool, depth: int, base_url: str | None, NavigableString, opts: HtmlRenderOptions
+) -> list[str]:
     lines: list[str] = []
     index = 0
     for child in el.children:
@@ -292,13 +359,14 @@ def _convert_list(el, *, ordered: bool, depth: int, base_url: str | None, Naviga
                 depth=depth,
                 base_url=base_url,
                 NavigableString=NavigableString,
+                opts=opts,
             )
         )
     return lines
 
 
 def _convert_list_item(
-    li, *, ordered: bool, index: int, depth: int, base_url: str | None, NavigableString
+    li, *, ordered: bool, index: int, depth: int, base_url: str | None, NavigableString, opts: HtmlRenderOptions
 ) -> list[str]:
     indent = "  " * depth
     bullet = f"{index}. " if ordered else "- "
@@ -312,7 +380,7 @@ def _convert_list_item(
             # Flush leading inline before nested list.
             if inline_nodes and not nested_blocks:
                 text = _normalize_inline(
-                    _render_inline_nodes(inline_nodes, base_url=base_url, NavigableString=NavigableString)
+                    _render_inline_nodes(inline_nodes, base_url=base_url, NavigableString=NavigableString, opts=opts)
                 )
                 inline_nodes = []
                 if text:
@@ -321,7 +389,7 @@ def _convert_list_item(
                     nested_blocks.append(prefix.rstrip())
             elif inline_nodes:
                 text = _normalize_inline(
-                    _render_inline_nodes(inline_nodes, base_url=base_url, NavigableString=NavigableString)
+                    _render_inline_nodes(inline_nodes, base_url=base_url, NavigableString=NavigableString, opts=opts)
                 )
                 inline_nodes = []
                 if text:
@@ -333,12 +401,13 @@ def _convert_list_item(
                     depth=depth + 1,
                     base_url=base_url,
                     NavigableString=NavigableString,
+                    opts=opts,
                 )
             )
         elif name in _BLOCK_TAGS and name not in ("ul", "ol"):
             if inline_nodes:
                 text = _normalize_inline(
-                    _render_inline_nodes(inline_nodes, base_url=base_url, NavigableString=NavigableString)
+                    _render_inline_nodes(inline_nodes, base_url=base_url, NavigableString=NavigableString, opts=opts)
                 )
                 inline_nodes = []
                 if text:
@@ -346,7 +415,7 @@ def _convert_list_item(
                         nested_blocks.append(prefix + text)
                     else:
                         nested_blocks.append(f"{indent}  {text}")
-            for block in _convert_block(child, base_url=base_url, NavigableString=NavigableString):
+            for block in _convert_block(child, base_url=base_url, NavigableString=NavigableString, opts=opts):
                 for line in block.split("\n"):
                     if not nested_blocks:
                         nested_blocks.append(prefix + line)
@@ -356,7 +425,9 @@ def _convert_list_item(
             inline_nodes.append(child)
 
     if inline_nodes:
-        text = _normalize_inline(_render_inline_nodes(inline_nodes, base_url=base_url, NavigableString=NavigableString))
+        text = _normalize_inline(
+            _render_inline_nodes(inline_nodes, base_url=base_url, NavigableString=NavigableString, opts=opts)
+        )
         if text:
             if not nested_blocks:
                 nested_blocks.append(prefix + text)
@@ -367,7 +438,7 @@ def _convert_list_item(
     return nested_blocks
 
 
-def _convert_table(table, *, base_url: str | None, NavigableString) -> str:
+def _convert_table(table, *, base_url: str | None, NavigableString, opts: HtmlRenderOptions) -> str:
     rows: list[list[str]] = []
     for tr in table.find_all("tr"):
         cells = tr.find_all(["th", "td"], recursive=False)
@@ -378,7 +449,7 @@ def _convert_table(table, *, base_url: str | None, NavigableString) -> str:
             continue
         row = [
             _normalize_inline(
-                _render_inline_nodes(cell.children, base_url=base_url, NavigableString=NavigableString)
+                _render_inline_nodes(cell.children, base_url=base_url, NavigableString=NavigableString, opts=opts)
             ).replace("|", "\\|")
             for cell in cells
         ]
@@ -429,14 +500,14 @@ def _fence_code(pre_el) -> str:
     return f"{fence}{lang}\n{code}\n{fence}"
 
 
-def _render_inline_nodes(nodes: Iterable, *, base_url: str | None, NavigableString) -> str:
+def _render_inline_nodes(nodes: Iterable, *, base_url: str | None, NavigableString, opts: HtmlRenderOptions) -> str:
     parts: list[str] = []
     for node in nodes:
-        parts.append(_render_inline(node, base_url=base_url, NavigableString=NavigableString))
+        parts.append(_render_inline(node, base_url=base_url, NavigableString=NavigableString, opts=opts))
     return "".join(parts)
 
 
-def _render_inline(node, *, base_url: str | None, NavigableString) -> str:
+def _render_inline(node, *, base_url: str | None, NavigableString, opts: HtmlRenderOptions) -> str:
     if isinstance(node, NavigableString):
         return str(node)
 
@@ -448,12 +519,14 @@ def _render_inline(node, *, base_url: str | None, NavigableString) -> str:
         return "\n"
 
     if name == "img":
+        if not opts.include_images:
+            return ""
         alt = (node.get("alt") or "").strip()
         return alt
 
     if name == "a":
         text = _normalize_inline(
-            _render_inline_nodes(node.children, base_url=base_url, NavigableString=NavigableString)
+            _render_inline_nodes(node.children, base_url=base_url, NavigableString=NavigableString, opts=opts)
         )
         href = (node.get("href") or "").strip()
         if not href or href.startswith(("javascript:", "data:")):
@@ -462,6 +535,8 @@ def _render_inline(node, *, base_url: str | None, NavigableString) -> str:
             href = urljoin(base_url, href)
         if not text:
             text = href
+        if not opts.include_links or opts.output_format == "text":
+            return text
         return f"[{text}]({href})"
 
     if name == "code" or name in ("kbd", "samp"):
@@ -472,23 +547,23 @@ def _render_inline(node, *, base_url: str | None, NavigableString) -> str:
 
     if name in ("strong", "b"):
         inner = _normalize_inline(
-            _render_inline_nodes(node.children, base_url=base_url, NavigableString=NavigableString)
+            _render_inline_nodes(node.children, base_url=base_url, NavigableString=NavigableString, opts=opts)
         )
         return f"**{inner}**" if inner else ""
 
     if name in ("em", "i"):
         inner = _normalize_inline(
-            _render_inline_nodes(node.children, base_url=base_url, NavigableString=NavigableString)
+            _render_inline_nodes(node.children, base_url=base_url, NavigableString=NavigableString, opts=opts)
         )
         return f"*{inner}*" if inner else ""
 
     if name in _BLOCK_TAGS:
         # Block inside inline context: flatten to text with spaces.
         return _normalize_inline(
-            _render_inline_nodes(node.children, base_url=base_url, NavigableString=NavigableString)
+            _render_inline_nodes(node.children, base_url=base_url, NavigableString=NavigableString, opts=opts)
         )
 
-    return _render_inline_nodes(node.children, base_url=base_url, NavigableString=NavigableString)
+    return _render_inline_nodes(node.children, base_url=base_url, NavigableString=NavigableString, opts=opts)
 
 
 def _normalize_inline(text: str) -> str:

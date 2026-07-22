@@ -215,3 +215,122 @@ def test_settings_module_has_no_cached_env_settings():
     # Characterization: no module-level AppSettings.from_env() result
     assert not hasattr(settings_mod, "SETTINGS")
     assert not hasattr(settings_mod, "settings")
+
+
+def test_full_flag_matrix_from_env():
+    s = AppSettings.from_env(
+        {
+            "SEARCH_PROVIDER": "ddgs",
+            "SEARCH_MAX_RESULTS": "9",
+            "SEARCH_SAFE_SEARCH": "strict",
+            "SEARCH_REGION": "us-en",
+            "SEARCH_TIME_RANGE": "week",
+            "SEARCH_RETRY_MAX": "2",
+            "SEARCH_RETRY_BACKOFF_SECONDS": "0.25",
+            "SEARCH_ALLOW_UNSUPPORTED_FILTERS": "true",
+            "SEARCH_FALLBACK_PROVIDERS": "ddgs",
+            "FETCH_MAX_BYTES": "10000",
+            "FETCH_MAX_PDF_BYTES": "20000",
+            "FETCH_MAX_REDIRECTS": "3",
+            "FETCH_MAX_COMPRESSED_BYTES": "8000",
+            "FETCH_MAX_DECOMPRESSED_BYTES": "16000",
+            "FETCH_ALLOW_HTTP": "false",
+            "FETCH_ALLOWED_PORTS": "80,443",
+            "PDF_MAX_PAGES": "12",
+            "PDF_MAX_CHARS": "4000",
+            "PAGE_MAX_CHARS": "1500",
+            "HTML_MIN_MAIN_CONTENT_CHARS": "50",
+            "HTML_INCLUDE_LINKS": "false",
+            "HTML_INCLUDE_IMAGES": "true",
+            "HTML_OUTPUT_FORMAT": "text",
+            "SEARCH_MAX_CONCURRENCY": "3",
+            "FETCH_MAX_CONCURRENCY": "4",
+            "PDF_MAX_CONCURRENCY": "1",
+            "CACHE_ENABLED": "true",
+            "SEARCH_CACHE_TTL_SECONDS": "10",
+            "FETCH_CACHE_TTL_SECONDS": "20",
+            "CACHE_MAX_ENTRIES": "7",
+            "CACHE_MAX_BYTES": "9999",
+            "LOG_LEVEL": "DEBUG",
+            "LOG_FORMAT": "json",
+            "LOG_INCLUDE_URLS": "true",
+            "LOG_INCLUDE_QUERIES": "true",
+        }
+    )
+    assert s.provider.max_results == 9
+    assert s.provider.safe_search == "strict"
+    assert s.provider.region == "us-en"
+    assert s.provider.time_range == "week"
+    assert s.provider.retry_max == 2
+    assert s.provider.retry_backoff_seconds == 0.25
+    assert s.provider.allow_unsupported_filters is True
+    assert s.fetch.max_bytes == 10000
+    assert s.fetch.max_pdf_bytes == 20000
+    assert s.fetch.max_redirects == 3
+    assert s.fetch.max_compressed_bytes == 8000
+    assert s.fetch.max_decompressed_bytes == 16000
+    assert s.fetch.allow_http is False
+    assert s.fetch.allowed_ports == frozenset({80, 443})
+    assert s.fetch.pdf_max_pages == 12
+    assert s.fetch.pdf_max_chars == 4000
+    assert s.extraction.max_page_chars == 1500
+    assert s.extraction.min_main_content_chars == 50
+    assert s.extraction.include_links is False
+    assert s.extraction.include_images is True
+    assert s.extraction.output_format == "text"
+    assert s.concurrency.search_max == 3
+    assert s.concurrency.fetch_max == 4
+    assert s.concurrency.pdf_max == 1
+    assert s.cache.enabled is True
+    assert s.cache.search_ttl_seconds == 10
+    assert s.cache.fetch_ttl_seconds == 20
+    assert s.cache.max_entries == 7
+    assert s.cache.max_bytes == 9999
+    assert s.logging.level == "DEBUG"
+    assert s.logging.format == "json"
+    assert s.logging.include_urls is True
+    assert s.logging.include_queries is True
+
+
+def test_client_wires_fetch_and_extraction_flags():
+    s = AppSettings.from_env(
+        {
+            "FETCH_MAX_REDIRECTS": "2",
+            "FETCH_ALLOW_HTTP": "false",
+            "FETCH_ALLOWED_PORTS": "443",
+            "HTML_INCLUDE_LINKS": "0",
+            "HTML_INCLUDE_IMAGES": "1",
+            "HTML_OUTPUT_FORMAT": "text",
+            "HTML_MIN_MAIN_CONTENT_CHARS": "33",
+            "PDF_MAX_PAGES": "7",
+        }
+    )
+    c = WebSearchClient(settings=s)
+    assert c._max_redirects == 2
+    assert c._fetch_allow_http is False
+    assert c._fetch_allowed_ports == frozenset({443})
+    assert c._include_links is False
+    assert c._include_images is True
+    assert c._output_format == "text"
+    assert c._min_main_content_chars == 33
+    assert c._pdf_max_pages == 7
+
+
+def test_invalid_allowed_ports():
+    try:
+        AppSettings.from_env({"FETCH_ALLOWED_PORTS": "80,notaport"})
+        raised = False
+    except SettingsError as e:
+        raised = True
+        assert e.code == "invalid_port"
+    assert raised
+
+
+def test_invalid_log_level():
+    try:
+        AppSettings.from_env({"LOG_LEVEL": "VERBOSE"})
+        raised = False
+    except SettingsError as e:
+        raised = True
+        assert e.code == "invalid_log_level"
+    assert raised

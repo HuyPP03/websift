@@ -6,7 +6,17 @@ import re
 from typing import Optional
 from urllib.parse import urlparse
 
-from web_search.config import MAX_FETCH_BYTES, MAX_PAGE_CHARS, MAX_PDF_FETCH_BYTES
+from web_search.config import (
+    MAX_COMPRESSED_BYTES,
+    MAX_DECOMPRESSED_BYTES,
+    MAX_FETCH_BYTES,
+    MAX_PAGE_CHARS,
+    MAX_PDF_FETCH_BYTES,
+    MAX_REDIRECTS,
+    MIN_MAIN_CONTENT_CHARS,
+    PDF_MAX_CHARS,
+    PDF_MAX_PAGES,
+)
 from web_search.content import looks_like_html, looks_like_html_document
 from web_search.html import html_to_markdown, truncate
 from web_search.http import fetch_raw
@@ -95,6 +105,10 @@ def process_fetched_body(
     max_page_chars: int,
     base_url: str | None = None,
     prefix: str = "",
+    include_links: bool = True,
+    include_images: bool = False,
+    min_main_content_chars: int = MIN_MAIN_CONTENT_CHARS,
+    output_format: str = "markdown",
 ) -> tuple[str, bool]:
     """Shared body pipeline for ordinary fetch and GitHub README shortcut.
 
@@ -103,7 +117,15 @@ def process_fetched_body(
     if "html" not in (content_type or "") and not looks_like_html(body):
         text = body.strip()
     else:
-        text = html_to_markdown(body, main_content=True, base_url=base_url)
+        text = html_to_markdown(
+            body,
+            main_content=True,
+            base_url=base_url,
+            include_links=include_links,
+            include_images=include_images,
+            min_main_content_chars=min_main_content_chars,
+            output_format=output_format,
+        )
         if not text.strip() and body.strip():
             # Fallback if converter yields empty but raw body is non-empty HTML-ish.
             text = body.strip()
@@ -168,6 +190,17 @@ class WebSearchClient:
             self._fetch_timeout = float(settings.fetch.timeout_seconds)
             self._max_fetch_bytes = settings.fetch.max_bytes
             self._max_pdf_fetch_bytes = settings.fetch.max_pdf_bytes
+            self._max_redirects = int(settings.fetch.max_redirects)
+            self._max_compressed_bytes = int(settings.fetch.max_compressed_bytes)
+            self._max_decompressed_bytes = int(settings.fetch.max_decompressed_bytes)
+            self._pdf_max_pages = int(settings.fetch.pdf_max_pages)
+            self._pdf_max_chars = int(settings.fetch.pdf_max_chars)
+            self._fetch_allow_http = bool(settings.fetch.allow_http)
+            self._fetch_allowed_ports = frozenset(settings.fetch.allowed_ports or ())
+            self._include_links = bool(settings.extraction.include_links)
+            self._include_images = bool(settings.extraction.include_images)
+            self._min_main_content_chars = int(settings.extraction.min_main_content_chars)
+            self._output_format = settings.extraction.output_format
             if provider is not None:
                 self._provider = provider
             else:
@@ -180,6 +213,17 @@ class WebSearchClient:
             self._fetch_timeout = float(timeout)
             self._max_fetch_bytes = MAX_FETCH_BYTES
             self._max_pdf_fetch_bytes = MAX_PDF_FETCH_BYTES
+            self._max_redirects = MAX_REDIRECTS
+            self._max_compressed_bytes = MAX_COMPRESSED_BYTES
+            self._max_decompressed_bytes = MAX_DECOMPRESSED_BYTES
+            self._pdf_max_pages = PDF_MAX_PAGES
+            self._pdf_max_chars = PDF_MAX_CHARS
+            self._fetch_allow_http = True
+            self._fetch_allowed_ports = frozenset()
+            self._include_links = True
+            self._include_images = False
+            self._min_main_content_chars = MIN_MAIN_CONTENT_CHARS
+            self._output_format = "markdown"
             self._provider = provider if provider is not None else get_default_provider(timeout=timeout)
 
     def search(self, query: str) -> str:
@@ -242,6 +286,7 @@ class WebSearchClient:
                 max_pdf,
                 extra_headers=dict(_GITHUB_README_HEADERS),
                 pdf_semaphore=self._pdf_semaphore,
+                **self._fetch_kwargs(),
             )
             if gh.ok and gh.content.strip():
                 # GitHub raw README may be Markdown or HTML document.
@@ -254,6 +299,7 @@ class WebSearchClient:
                         max_page_chars=self.max_page_chars,
                         base_url=url,
                         prefix=f"README of {url} (via GitHub API):\n\n",
+                        **self._extraction_kwargs(),
                     )
                 else:
                     # Preserve Markdown/plain README text with prefix, then truncate.
@@ -279,6 +325,7 @@ class WebSearchClient:
             max_bytes,
             max_pdf,
             pdf_semaphore=self._pdf_semaphore,
+            **self._fetch_kwargs(),
         )
         if not raw.ok:
             return FetchResult.failure(
@@ -298,6 +345,7 @@ class WebSearchClient:
             raw.content_type,
             max_page_chars=self.max_page_chars,
             base_url=raw.final_url or url,
+            **self._extraction_kwargs(),
         )
         return FetchResult.success(
             url,
@@ -310,6 +358,26 @@ class WebSearchClient:
             truncated=truncated,
             overflow=raw.overflow,
         )
+
+    def _fetch_kwargs(self) -> dict:
+        ports = self._fetch_allowed_ports or None
+        return {
+            "max_compressed_bytes": self._max_compressed_bytes,
+            "max_decompressed_bytes": self._max_decompressed_bytes,
+            "pdf_max_pages": self._pdf_max_pages,
+            "pdf_max_chars": self._pdf_max_chars,
+            "max_redirects": self._max_redirects,
+            "allow_http": self._fetch_allow_http,
+            "allowed_ports": ports if ports else None,
+        }
+
+    def _extraction_kwargs(self) -> dict:
+        return {
+            "include_links": self._include_links,
+            "include_images": self._include_images,
+            "min_main_content_chars": self._min_main_content_chars,
+            "output_format": self._output_format,
+        }
 
     def _github_readme_api_url(self, url: str) -> Optional[str]:
         parsed = urlparse(url)

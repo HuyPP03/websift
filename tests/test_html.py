@@ -107,9 +107,28 @@ def test_table_fixture():
 
 
 def test_image_alt():
-    out = html_to_markdown('<p>Logo: <img src="x.png" alt="Company logo"></p>')
+    out = html_to_markdown('<p>Logo: <img src="x.png" alt="Company logo"></p>', include_images=True)
     assert "Company logo" in out
     assert "x.png" not in out
+
+
+def test_image_alt_off_by_default():
+    out = html_to_markdown('<p>Logo: <img src="x.png" alt="Company logo"></p>')
+    assert "Company logo" not in out
+
+
+def test_include_links_false():
+    out = html_to_markdown('<p>See <a href="https://example.com/x">docs</a>.</p>', include_links=False)
+    assert "docs" in out
+    assert "https://example.com/x" not in out
+
+
+def test_output_format_text_strips_markdown():
+    out = html_to_markdown("<h1>Title</h1><p>See <a href='https://ex.example'>here</a>.</p>", output_format="text")
+    assert "Title" in out
+    assert "here" in out
+    assert "https://ex.example" not in out
+    assert not out.startswith("#")
 
 
 def test_main_content_prefers_article_when_long_enough():
@@ -191,7 +210,7 @@ def test_fixture_article_file():
 
 def test_fixture_docs_file():
     html = (FIXTURES / "docs.html").read_text(encoding="utf-8")
-    out = html_to_markdown(html, main_content=True)
+    out = html_to_markdown(html, main_content=True, include_images=True)
     assert "API Reference" in out
     assert "`fetch`" in out
     assert "[guide](/guide)" in out

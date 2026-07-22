@@ -57,14 +57,20 @@ class ValidatedURL:
         return (self.scheme == "https" and self.port == 443) or (self.scheme == "http" and self.port == 80)
 
 
-def validate_http_url(url: str) -> tuple[bool, str, ValidatedURL | None]:
+def validate_http_url(
+    url: str,
+    *,
+    allow_http: bool = True,
+    allowed_ports: frozenset[int] | set[int] | None = None,
+) -> tuple[bool, str, ValidatedURL | None]:
     """Validate and normalize an absolute http(s) URL for fetch/redirect targets.
 
     Rules:
-    - scheme must be http or https
+    - scheme must be http or https (http blocked when ``allow_http`` is False)
     - hostname required
     - reject embedded credentials / userinfo
     - port must be in 1..65535 (malformed ports rejected)
+    - when ``allowed_ports`` is non-empty, only those ports are accepted
     - hostname normalized via IDNA where needed
     """
     if not url or not str(url).strip():
@@ -78,6 +84,8 @@ def validate_http_url(url: str) -> tuple[bool, str, ValidatedURL | None]:
 
     if parsed.scheme not in ("http", "https"):
         return False, f"Blocked: only http/https allowed (got {parsed.scheme!r}).", None
+    if parsed.scheme == "http" and not allow_http:
+        return False, "Blocked: http URLs are not allowed (set FETCH_ALLOW_HTTP=true).", None
 
     # Reject userinfo even when urlparse absorbs it into username/password.
     if parsed.username is not None or parsed.password is not None:
@@ -100,6 +108,8 @@ def validate_http_url(url: str) -> tuple[bool, str, ValidatedURL | None]:
         return False, "Blocked: invalid port.", None
 
     effective_port = port if port is not None else (443 if parsed.scheme == "https" else 80)
+    if allowed_ports is not None and len(allowed_ports) > 0 and effective_port not in allowed_ports:
+        return False, f"Blocked: port {effective_port} is not in FETCH_ALLOWED_PORTS.", None
 
     # Normalize IDN hostnames to ASCII (punycode).
     try:

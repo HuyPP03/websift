@@ -126,6 +126,25 @@ def _parse_csv(raw: str | None) -> tuple[str, ...]:
     return tuple(p.strip() for p in raw.split(",") if p.strip())
 
 
+def _parse_ports(raw: str | None, *, key: str) -> frozenset[int]:
+    """Parse comma-separated ports. Empty/missing → empty set (any port)."""
+    if raw is None or not str(raw).strip():
+        return frozenset()
+    ports: set[int] = set()
+    for part in str(raw).split(","):
+        p = part.strip()
+        if not p:
+            continue
+        try:
+            n = int(p)
+        except ValueError as e:
+            raise SettingsError(f"Invalid port in {key}: {p!r}", code="invalid_port") from e
+        if not (1 <= n <= 65535):
+            raise SettingsError(f"{key} port must be 1..65535 (got {n})", code="invalid_port")
+        ports.add(n)
+    return frozenset(ports)
+
+
 def _load_provider_endpoints(env: Mapping[str, str]) -> dict[str, ProviderEndpoint]:
     """Read all known provider base URL / API key env vars (for primary + fallbacks)."""
     return {
@@ -240,6 +259,8 @@ class FetchSettings:
     pdf_max_pages: int = PDF_MAX_PAGES
     pdf_max_chars: int = PDF_MAX_CHARS
     allow_http: bool = True
+    # Empty frozenset = any port 1..65535 (subject to URL validation).
+    allowed_ports: frozenset[int] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -352,6 +373,10 @@ class AppSettings:
             raise SettingsError("FETCH_TIMEOUT_SECONDS must be > 0", code="invalid_timeout")
         if self.provider.retry_max < 0:
             raise SettingsError("SEARCH_RETRY_MAX must be >= 0", code="invalid_retry")
+        if self.fetch.max_redirects < 0:
+            raise SettingsError("FETCH_MAX_REDIRECTS must be >= 0", code="invalid_redirects")
+        if self.fetch.max_bytes < 1 or self.fetch.max_pdf_bytes < 1:
+            raise SettingsError("Fetch byte limits must be >= 1", code="invalid_fetch_bytes")
         if self.extraction.max_page_chars < 1:
             raise SettingsError("PAGE_MAX_CHARS must be >= 1", code="invalid_page_chars")
         if self.extraction.output_format not in _VALID_OUTPUT_FORMATS:
@@ -363,6 +388,12 @@ class AppSettings:
             raise SettingsError(
                 f"Invalid LOG_FORMAT {self.logging.format!r}",
                 code="invalid_log_format",
+            )
+        _valid_levels = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"}
+        if self.logging.level not in _valid_levels:
+            raise SettingsError(
+                f"Invalid LOG_LEVEL {self.logging.level!r}",
+                code="invalid_log_level",
             )
         if self.concurrency.search_max < 1 or self.concurrency.fetch_max < 1 or self.concurrency.pdf_max < 1:
             raise SettingsError("Concurrency limits must be >= 1", code="invalid_concurrency")
@@ -473,6 +504,7 @@ class AppSettings:
                 pdf_max_pages=_get_int(env, "PDF_MAX_PAGES", PDF_MAX_PAGES, min_value=1),
                 pdf_max_chars=_get_int(env, "PDF_MAX_CHARS", PDF_MAX_CHARS, min_value=1),
                 allow_http=_get_bool(env, "FETCH_ALLOW_HTTP", True),
+                allowed_ports=_parse_ports(_get_optional_str(env, "FETCH_ALLOWED_PORTS"), key="FETCH_ALLOWED_PORTS"),
             ),
             extraction=ExtractionSettings(
                 max_page_chars=_get_int(env, "PAGE_MAX_CHARS", MAX_PAGE_CHARS, min_value=1),

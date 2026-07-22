@@ -143,13 +143,15 @@ def allow_loopback_fetch(monkeypatch: pytest.MonkeyPatch, http_server):
     from web_search.security import resolve_host as real_resolve
     from web_search.security import validate_http_url as real_validate
 
-    def _validate(url: str):
-        ok, reason, validated = real_validate(url)
+    def _validate(url: str, *, allow_http: bool = True, allowed_ports=None):
+        ok, reason, validated = real_validate(url, allow_http=allow_http, allowed_ports=allowed_ports)
         if ok:
             return ok, reason, validated
         parsed = urlparse(str(url).strip())
         host = (parsed.hostname or "").lower()
         if parsed.scheme in {"http", "https"} and host in {"127.0.0.1", "localhost"}:
+            if parsed.scheme == "http" and not allow_http:
+                return False, "Blocked: http URLs are not allowed (set FETCH_ALLOW_HTTP=true).", None
             if parsed.username is not None or parsed.password is not None or "@" in (parsed.netloc or ""):
                 return False, "Blocked: URL must not contain embedded credentials.", None
             try:
@@ -157,6 +159,8 @@ def allow_loopback_fetch(monkeypatch: pytest.MonkeyPatch, http_server):
             except ValueError:
                 return False, "Blocked: invalid port.", None
             eff = port if port is not None else (443 if parsed.scheme == "https" else 80)
+            if allowed_ports is not None and len(allowed_ports) > 0 and eff not in allowed_ports:
+                return False, f"Blocked: port {eff} is not in FETCH_ALLOWED_PORTS.", None
             return (
                 True,
                 "",

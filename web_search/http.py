@@ -312,6 +312,9 @@ def fetch_raw(
     max_decompressed_bytes: int = MAX_DECOMPRESSED_BYTES,
     pdf_max_pages: int = PDF_MAX_PAGES,
     pdf_max_chars: int = PDF_MAX_CHARS,
+    max_redirects: int = MAX_REDIRECTS,
+    allow_http: bool = True,
+    allowed_ports: frozenset[int] | set[int] | None = None,
     pdf_semaphore=None,
 ) -> FetchResult:
     """Fetch URL with SSRF protection, DNS pinning, redirect following, body limits.
@@ -320,8 +323,9 @@ def fetch_raw(
     are set and ``content`` is empty. Callers format the public string separately.
     """
     requested = str(url).strip() if url is not None else ""
+    redirect_limit = max(0, int(max_redirects))
 
-    ok, reason, validated = validate_http_url(url)
+    ok, reason, validated = validate_http_url(url, allow_http=allow_http, allowed_ports=allowed_ports)
     if not ok or validated is None:
         return FetchResult.failure(requested or str(url), reason, ErrorCategory.BLOCKED)
 
@@ -368,7 +372,8 @@ def fetch_raw(
                 overflow=overflow,
             )
 
-        for _ in range(MAX_REDIRECTS):
+        # +1 attempt for the final response after up to redirect_limit redirects.
+        for _ in range(redirect_limit + 1):
             cp = urlparse(current_url)
             ip_netloc = _pinned_netloc(current_port, current_scheme, pinned_ip)
             pinned_url = urlunparse(cp._replace(netloc=ip_netloc, scheme=current_scheme))
@@ -403,9 +408,17 @@ def fetch_raw(
                             ErrorCategory.REDIRECT,
                             code=status,
                         )
+                    if redirect_count >= redirect_limit:
+                        return _fail(
+                            f"Failed to fetch: too many redirects (>{redirect_limit}).",
+                            ErrorCategory.REDIRECT,
+                            code=status,
+                        )
 
                     next_url = urljoin(current_url, location)
-                    ok_u, reason_u, vnext = validate_http_url(next_url)
+                    ok_u, reason_u, vnext = validate_http_url(
+                        next_url, allow_http=allow_http, allowed_ports=allowed_ports
+                    )
                     if not ok_u or vnext is None:
                         return _fail(
                             reason_u or "Blocked: redirect target not valid http/https.",

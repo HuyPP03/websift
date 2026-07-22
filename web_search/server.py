@@ -14,6 +14,7 @@ from mcp.server.fastmcp import FastMCP
 
 from web_search.client import WebSearchClient
 from web_search.concurrency import WorkLimits
+from web_search.logging_config import configure_logging, log_fetch, log_search
 from web_search.settings import AppSettings
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "0:0:0:0:0:0:0:1"})
@@ -83,6 +84,8 @@ def create_server(
     if warn_public_bind:
         warn_if_public_bind(settings.server.host)
 
+    configure_logging(settings.logging)
+
     work = limits if limits is not None else WorkLimits.from_settings(settings.concurrency)
 
     if client is None:
@@ -100,11 +103,13 @@ def create_server(
     @mcp.tool()
     async def web_search(query: str) -> str:
         """Search the web using DuckDuckGo. Returns title, URL, and snippet for each result."""
+        log_search(settings.logging, query, provider=getattr(client._provider, "name", None))
         return await work.run_search(client.search, query)
 
     @mcp.tool()
     async def web_fetch(url: str) -> str:
         """Fetch a web page and return its readable text content (HTML -> Markdown, PDF -> text)."""
+        log_fetch(settings.logging, url)
         return await work.run_fetch(client.fetch, url)
 
     return ServerApp(
