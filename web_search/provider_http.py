@@ -34,9 +34,11 @@ _SECRET_KEY_HINTS = (
 )
 _REDACTED = "[REDACTED]"
 # Bearer tokens, long hex/base64-looking secrets in free text.
+# Use re.IGNORECASE (not mid-pattern (?i)): Python 3.11+ rejects global flags after start.
 _TOKEN_RE = re.compile(
-    r"(?i)\b(bearer\s+)[a-z0-9._\-+/=]{8,}\b"
-    r"|(?i)\b(api[_-]?key|token|secret|password)\s*[:=]\s*['\"]?([^\s'\",;]+)"
+    r"\b(bearer\s+)[a-z0-9._\-+/=]{8,}\b"
+    r"|\b(api[_-]?key|token|secret|password)\s*[:=]\s*['\"]?([^\s'\",;]+)",
+    re.IGNORECASE,
 )
 
 
