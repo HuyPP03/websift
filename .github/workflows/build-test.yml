@@ -84,10 +84,11 @@ jobs:
           /tmp/websift-smoke/bin/pip install --upgrade pip
           /tmp/websift-smoke/bin/pip install dist/websift-*.whl
           /tmp/websift-smoke/bin/python - <<'PY'
+          import os
           import web_search
+          from importlib.metadata import entry_points, version
           from web_search import WebSearchClient
-          from importlib.metadata import version
-          from web_search.server import create_server
+          from web_search.server import create_server, main
           from web_search.settings import AppSettings, ServerSettings
 
           assert web_search.__version__ == version("websift"), (
@@ -106,11 +107,18 @@ jobs:
           assert app.transport == "stdio"
           assert callable(app.web_search)
           assert callable(app.web_fetch)
-          print("smoke ok", web_search.__version__)
+
+          # Console entry points to main — do NOT execute main()/websift (starts server).
+          eps = entry_points()
+          scripts = eps.select(group="console_scripts") if hasattr(eps, "select") else eps.get("console_scripts", [])
+          websift_eps = [e for e in scripts if e.name == "websift"]
+          assert websift_eps, "console_scripts entry 'websift' missing"
+          assert websift_eps[0].value == "web_search.server:main"
+          assert callable(main)
+          assert os.path.isfile("/tmp/websift-smoke/bin/websift")
+          assert os.access("/tmp/websift-smoke/bin/websift", os.X_OK)
+          print("smoke ok", web_search.__version__, "entry", websift_eps[0].value)
           PY
-          /tmp/websift-smoke/bin/websift --help 2>/dev/null || true
-          test -x /tmp/websift-smoke/bin/websift
-          echo "console entry: websift present"
 
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
