@@ -17,3 +17,5 @@ htmlcov/
 venv/
 env/
 .venv/
+
+plan.md
