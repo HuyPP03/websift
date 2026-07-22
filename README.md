@@ -288,13 +288,16 @@ The Python programming language...
 
 ### Environment Variables
 
-| Variable               | Default             | Description                                          |
-| ---------------------- | ------------------- | ---------------------------------------------------- |
-| `MCP_HOST`           | `0.0.0.0`         | Bind address                                         |
-| `MCP_PORT`           | `8787`            | Listen port                                          |
-| `MCP_TRANSPORT`      | `streamable-http` | Transport:`streamable-http`, `sse`, or `stdio` |
-| `SEARCH_MAX_RESULTS` | `5`               | Max search results returned                          |
-| `SEARCH_TIMEOUT`     | `30`              | Request timeout in seconds                           |
+| Variable                   | Default             | Description                                                          |
+| -------------------------- | ------------------- | -------------------------------------------------------------------- |
+| `MCP_HOST`               | `127.0.0.1`       | Bind address (use `0.0.0.0` only when intentionally exposing)      |
+| `MCP_PORT`               | `8787`            | Listen port                                                          |
+| `MCP_TRANSPORT`          | `streamable-http` | Transport: `streamable-http`, `sse`, or `stdio`                  |
+| `SEARCH_PROVIDER`        | `ddgs`            | Server-wide search provider (allowlisted)                            |
+| `SEARCH_MAX_RESULTS`     | `5`               | Max search results returned                                          |
+| `SEARCH_TIMEOUT_SECONDS` | `30`              | Search timeout (seconds)                                             |
+| `FETCH_TIMEOUT_SECONDS`  | `30`              | Page fetch timeout (seconds)                                         |
+| `SEARCH_TIMEOUT`         | (alias)             | **Deprecated**: if set and specific timeouts omit, maps to both |
 
 ### Internal Limits
 
@@ -564,7 +567,7 @@ This server is particularly well-suited for agentic AI because:
 
 ### Network Considerations
 
-- The server binds to `0.0.0.0` by default — restrict with `MCP_HOST=127.0.0.1` for local-only access.
+- The server binds to `127.0.0.1` by default. Set `MCP_HOST=0.0.0.0` only when intentionally exposing the port (e.g. Docker).
 - No authentication is built in — place behind a reverse proxy (nginx, Caddy) if exposing externally.
 - Docker Compose isolates the server in its own container network.
 

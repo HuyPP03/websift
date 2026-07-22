@@ -310,13 +310,16 @@ The Python programming language...
 
 ### Biến môi trường
 
-| Biến                  | Mặc định         | Mô tả                                                 |
-| ---------------------- | ------------------- | ------------------------------------------------------- |
-| `MCP_HOST`           | `0.0.0.0`         | Địa chỉ bind                                         |
-| `MCP_PORT`           | `8787`            | Cổng lắng nghe                                        |
-| `MCP_TRANSPORT`      | `streamable-http` | Transport:`streamable-http`, `sse`, hoặc `stdio` |
-| `SEARCH_MAX_RESULTS` | `5`               | Số kết quả tìm kiếm tối đa                       |
-| `SEARCH_TIMEOUT`     | `30`              | Thời gian chờ (giây)                                 |
+| Biến                       | Mặc định            | Mô tả                                                                 |
+| -------------------------- | ------------------- | ----------------------------------------------------------------------- |
+| `MCP_HOST`               | `127.0.0.1`       | Địa chỉ bind (chỉ dùng `0.0.0.0` khi cố ý expose)               |
+| `MCP_PORT`               | `8787`            | Cổng lắng nghe                                                         |
+| `MCP_TRANSPORT`          | `streamable-http` | Transport: `streamable-http`, `sse`, hoặc `stdio`                 |
+| `SEARCH_PROVIDER`        | `ddgs`            | Provider tìm kiếm (allowlist)                                          |
+| `SEARCH_MAX_RESULTS`     | `5`               | Số kết quả tìm kiếm tối đa                                        |
+| `SEARCH_TIMEOUT_SECONDS` | `30`              | Timeout search (giây)                                                   |
+| `FETCH_TIMEOUT_SECONDS`  | `30`              | Timeout fetch trang (giây)                                              |
+| `SEARCH_TIMEOUT`         | (alias)             | **Deprecated**: nếu set và thiếu timeout cụ thể thì map cả hai |
 
 ### Giới hạn nội bộ
 
@@ -587,7 +590,7 @@ Server này đặc biệt phù hợp cho Agentic AI vì:
 
 ### Lưu ý về mạng
 
-- Server bind vào `0.0.0.0` mặc định — hạn chế bằng `MCP_HOST=127.0.0.1` để chỉ truy cập local.
+- Server bind vào `127.0.0.1` mặc định. Chỉ set `MCP_HOST=0.0.0.0` khi cố ý expose (ví dụ Docker).
 - Không có xác thực tích hợp — đặt behind reverse proxy (nginx, Caddy) nếu phơi ra bên ngoài.
 - Docker Compose cô lập server trong mạng container riêng.
 

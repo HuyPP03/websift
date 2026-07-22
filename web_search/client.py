@@ -17,6 +17,7 @@ from web_search.models import (
     SearchResponse,
 )
 from web_search.providers.base import SearchProvider
+from web_search.providers.ddgs import DdgsProviderConfig
 from web_search.providers.errors import (
     ProviderAuthError,
     ProviderError,
@@ -26,7 +27,8 @@ from web_search.providers.errors import (
     ProviderUnavailableError,
     sanitize_provider_message,
 )
-from web_search.providers.registry import get_default_provider
+from web_search.providers.registry import create_provider, get_default_provider
+from web_search.settings import AppSettings
 
 _GITHUB_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 _GITHUB_NON_OWNER_SEGMENTS = {
@@ -135,6 +137,10 @@ class WebSearchClient:
     Self-contained web search + page fetch.
     No API key required. Uses DuckDuckGo (ddgs) for search by default,
     urllib for fetch, with SSRF protection + DNS pinning.
+
+    Prefer ``WebSearchClient(settings=AppSettings.from_env())`` for runtime
+    configuration. Legacy ``max_results`` / ``timeout`` / ``max_page_chars``
+    kwargs remain supported and map search+fetch to the shared timeout.
     """
 
     def __init__(
@@ -143,11 +149,33 @@ class WebSearchClient:
         timeout: int = 30,
         max_page_chars: int = MAX_PAGE_CHARS,
         provider: SearchProvider | None = None,
+        settings: AppSettings | None = None,
     ):
-        self.max_results = max_results
-        self.timeout = timeout
-        self.max_page_chars = max_page_chars
-        self._provider = provider if provider is not None else get_default_provider(timeout=timeout)
+        self._settings = settings
+        if settings is not None:
+            self.max_results = settings.provider.max_results
+            # Public attribute kept for compatibility; equals search timeout.
+            self.timeout = int(settings.provider.timeout_seconds)
+            self.max_page_chars = settings.extraction.max_page_chars
+            self._search_timeout = float(settings.provider.timeout_seconds)
+            self._fetch_timeout = float(settings.fetch.timeout_seconds)
+            self._max_fetch_bytes = settings.fetch.max_bytes
+            self._max_pdf_fetch_bytes = settings.fetch.max_pdf_bytes
+            if provider is not None:
+                self._provider = provider
+            else:
+                self._provider = _provider_from_settings(settings)
+        else:
+            self.max_results = max_results
+            self.timeout = timeout
+            self.max_page_chars = max_page_chars
+            self._search_timeout = float(timeout)
+            self._fetch_timeout = float(timeout)
+            self._max_fetch_bytes = MAX_FETCH_BYTES
+            self._max_pdf_fetch_bytes = MAX_PDF_FETCH_BYTES
+            self._provider = (
+                provider if provider is not None else get_default_provider(timeout=timeout)
+            )
 
     def search(self, query: str) -> str:
         return format_search_response(self.search_structured(query))
@@ -163,6 +191,15 @@ class WebSearchClient:
                 request=request,
                 error_category=ErrorCategory.EMPTY_INPUT,
                 error_message="No query provided.",
+            )
+        if self._settings is not None:
+            ps = self._settings.provider
+            request = SearchRequest(
+                query=request.query,
+                max_results=self.max_results,
+                safe_search=ps.safe_search,
+                region=ps.region,
+                time_range=ps.time_range,
             )
         try:
             results = self._provider.search(request)
@@ -187,13 +224,17 @@ class WebSearchClient:
         if not url:
             return FetchResult.failure(url, "No URL provided.", ErrorCategory.EMPTY_INPUT)
 
+        fetch_timeout = self._fetch_timeout
+        max_bytes = self._max_fetch_bytes
+        max_pdf = self._max_pdf_fetch_bytes
+
         readme_url = self._github_readme_api_url(url)
         if readme_url:
             gh = fetch_raw(
                 readme_url,
-                self.timeout,
-                MAX_FETCH_BYTES,
-                MAX_PDF_FETCH_BYTES,
+                fetch_timeout,
+                max_bytes,
+                max_pdf,
                 extra_headers=dict(_GITHUB_README_HEADERS),
             )
             if gh.ok and gh.content.strip():
@@ -226,7 +267,7 @@ class WebSearchClient:
                         truncated=truncated,
                     )
 
-        raw = fetch_raw(url, self.timeout, MAX_FETCH_BYTES, MAX_PDF_FETCH_BYTES)
+        raw = fetch_raw(url, fetch_timeout, max_bytes, max_pdf)
         if not raw.ok:
             return FetchResult.failure(
                 url,
@@ -274,3 +315,16 @@ class WebSearchClient:
         if not (_GITHUB_NAME_RE.match(owner) and _GITHUB_NAME_RE.match(repo)):
             return None
         return f"https://api.github.com/repos/{owner}/{repo}/readme"
+
+
+def _provider_from_settings(settings: AppSettings) -> SearchProvider:
+    name = (settings.provider.name or "ddgs").strip().lower()
+    if name == "ddgs":
+        return create_provider(
+            "ddgs",
+            DdgsProviderConfig(
+                timeout=int(settings.provider.timeout_seconds),
+                allow_unsupported_filters=settings.provider.allow_unsupported_filters,
+            ),
+        )
+    return create_provider(name, None)
