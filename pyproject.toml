@@ -64,6 +64,9 @@ Changelog = "https://github.com/HuyPP03/websift/blob/main/CHANGELOG.md"
 [tool.setuptools.packages.find]
 include = ["websift*"]
 
+[tool.setuptools.package-data]
+websift = ["py.typed"]
+
 [tool.setuptools.dynamic]
 version = {attr = "websift.__version__"}
 

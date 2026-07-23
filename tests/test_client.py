@@ -96,7 +96,7 @@ class TestSearch:
         monkeypatch.setitem(sys.modules, "ddgs", mod)
         out = WebSearchClient().search("x")
         assert out.startswith("Search failed:")
-        assert "rate limited" in out
+        assert "rate" in out.lower()
 
 
 class TestFetch:

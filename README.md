@@ -1,6 +1,14 @@
 # websift
 
-A lightweight, **free, self-hosted MCP (Model Context Protocol) server** that gives AI agents real-time web access — DuckDuckGo search + web page fetching (HTML → Markdown, PDF → text) — with built-in SSRF protection and DNS pinning. **No API key required.**
+A lightweight **Python library** and **free, self-hosted MCP server** for real-time web access — DuckDuckGo search + page fetching (HTML → Markdown, PDF → text) — with SSRF protection and DNS pinning. **No API key required** for the default provider.
+
+```python
+from websift import WebSearchClient
+
+print(WebSearchClient().search("python asyncio"))
+```
+
+Prefer the library when you only need search/fetch in process; run `websift serve` when you want MCP tools for AI clients.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![PyPI](https://img.shields.io/badge/PyPI-websift-orange.svg)](https://pypi.org/project/websift/)
@@ -432,10 +440,17 @@ The Python programming language...
 | `FETCH_TIMEOUT_SECONDS`     | `30`              | Page fetch timeout (seconds)                                                    |
 | `SEARCH_TIMEOUT`            | (alias)             | **Deprecated**: if set and specific timeouts omit, maps to both           |
 | `SEARCH_FALLBACK_PROVIDERS` | (empty)             | Comma-separated allowlisted fallbacks after primary (no config/auth fallback)   |
+| `SEARCH_RETRY_MAX`          | `1`               | Extra retries after first attempt (DDGS + HTTP providers)                       |
+| `SEARCH_RETRY_BACKOFF_SECONDS` | `0.5`          | Base backoff (seconds); doubles each attempt, capped                              |
 | `PAGE_MAX_CHARS`            | `128000`          | Max characters returned from fetch                                              |
 | `SEARCH_MAX_CONCURRENCY`    | `8`               | Max concurrent search operations                                                |
 | `FETCH_MAX_CONCURRENCY`     | `16`              | Max concurrent page fetches                                                     |
 | `PDF_MAX_CONCURRENCY`       | `2`               | Max concurrent PDF parses                                                       |
+| `CACHE_ENABLED`             | `false`           | Opt-in in-memory TTL/LRU cache for successful search/fetch                      |
+| `SEARCH_CACHE_TTL_SECONDS`  | `300`             | Search cache TTL when enabled                                                   |
+| `FETCH_CACHE_TTL_SECONDS`   | `600`             | Fetch cache TTL when enabled                                                    |
+| `CACHE_MAX_ENTRIES`         | `256`             | Max cache entries                                                               |
+| `CACHE_MAX_BYTES`           | `33554432`        | Approx max cache payload bytes                                                  |
 
 ### Search providers
 
@@ -782,6 +797,22 @@ websift/
 | PyPI / CLI / Docker / import | `websift`                                             |
 | MCP tools (stable)           | `web_search`, `web_fetch`                           |
 | Version source               | `websift.__version__` (dynamic in `pyproject.toml`) |
+
+### Migration from `web_search` (pre-1.0)
+
+The import package was renamed in **1.0.0**:
+
+```python
+# Before
+from web_search import WebSearchClient
+
+# After
+from websift import WebSearchClient, AppSettings
+```
+
+- Install/CLI/Docker remain `websift`.
+- MCP tool names stay `web_search` / `web_fetch` (schemas unchanged).
+- Prefer `WebSearchClient(...)` kwargs or `AppSettings` over editing env when embedding as a library.
 
 ### Running Locally
 

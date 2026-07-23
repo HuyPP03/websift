@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-07-23
+
+### Added
+
+- `websift/py.typed` marker so type checkers treat the package as typed.
+- Opt-in **in-memory TTL/LRU cache** for successful `search` / `fetch` results (`CACHE_ENABLED`, TTLs, size caps). Off by default.
+- DDGS provider uses `SEARCH_RETRY_MAX` / `SEARCH_RETRY_BACKOFF_SECONDS` (same knobs as HTTP providers).
+
+### Improved
+
+- Clearer public DDGS errors for timeout, rate-limit/block, and connectivity failures.
+- Docs: migration note (`web_search` → `websift`), library-first install blurb, cache/retry env vars.
+
 ## [1.0.0] - 2026-07-23
 
 First stable major release. Breaking changes from the 0.3.x line are intentional and documented below.

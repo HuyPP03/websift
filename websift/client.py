@@ -295,6 +295,7 @@ class WebSearchClient:
                     fetch_context=self._fetch_context,
                     pdf_semaphore=pdf_semaphore,
                 )
+            self._init_cache(resolved.cache)
         else:
             # Fast legacy path: plain kwargs, default DDGS, no AppSettings tree.
             self._settings = None
@@ -318,6 +319,24 @@ class WebSearchClient:
                     pdf_semaphore=pdf_semaphore,
                 )
                 self._provider = self._primary_provider
+            self._init_cache(None)
+
+    def _init_cache(self, cache_settings) -> None:
+        """Wire opt-in in-memory cache (disabled unless CacheSettings.enabled)."""
+        from websift.cache import TtlLruCache
+        from websift.settings import CacheSettings
+
+        if not isinstance(cache_settings, CacheSettings) or not cache_settings.enabled:
+            self._cache = None
+            self._search_ttl = 0.0
+            self._fetch_ttl = 0.0
+            return
+        self._cache = TtlLruCache(
+            max_entries=cache_settings.max_entries,
+            max_bytes=cache_settings.max_bytes,
+        )
+        self._search_ttl = float(cache_settings.search_ttl_seconds)
+        self._fetch_ttl = float(cache_settings.fetch_ttl_seconds)
 
     def search(self, query: str) -> str:
         return format_search_response(self.search_structured(query))
@@ -327,6 +346,11 @@ class WebSearchClient:
 
     def search_structured(self, query: str) -> SearchResponse:
         """Internal structured search; public ``search()`` formats this to ``str``."""
+        from websift.cache import (
+            estimate_search_response_size,
+            make_search_cache_key,
+        )
+
         request = SearchRequest(query=(query or "").strip(), max_results=self.max_results)
         if not request.query:
             return SearchResponse(
@@ -343,6 +367,15 @@ class WebSearchClient:
                 region=ps.region,
                 time_range=ps.time_range,
             )
+
+        cache_key = None
+        if self._cache is not None and self._search_ttl > 0:
+            provider_name = str(getattr(self._provider, "name", None) or "unknown")
+            cache_key = make_search_cache_key(request, provider=provider_name)
+            hit = self._cache.get(cache_key)
+            if isinstance(hit, SearchResponse):
+                return hit
+
         try:
             results = self._provider.search(request)
         except ProviderError as e:
@@ -358,7 +391,15 @@ class WebSearchClient:
                 error_category=ErrorCategory.PROVIDER,
                 error_message=f"Search failed: {sanitize_provider_message(str(e))}",
             )
-        return SearchResponse(request=request, results=tuple(results or ()))
+        response = SearchResponse(request=request, results=tuple(results or ()))
+        if cache_key is not None and response.ok and self._cache is not None:
+            self._cache.set(
+                cache_key,
+                response,
+                ttl_seconds=self._search_ttl,
+                size=estimate_search_response_size(response),
+            )
+        return response
 
     def fetch_structured(self, url: str) -> FetchResult:
         """Internal structured fetch; public ``fetch()`` formats this to ``str``.
@@ -366,11 +407,35 @@ class WebSearchClient:
         Delegates to the primary provider's ``fetch`` (generic by default;
         Tavily/Exa may override with native extract).
         """
+        from websift.cache import (
+            estimate_fetch_result_size,
+            make_fetch_cache_key,
+        )
+
         url = (url or "").strip()
         if not url:
             return FetchResult.failure(url, "No URL provided.", ErrorCategory.EMPTY_INPUT)
+
+        cache_key = None
+        if self._cache is not None and self._fetch_ttl > 0:
+            ctx = self._fetch_context
+            provider_name = str(getattr(self._primary_provider, "name", None) or "unknown")
+            cache_key = make_fetch_cache_key(
+                url,
+                max_page_chars=int(ctx.max_page_chars),
+                include_links=bool(ctx.include_links),
+                include_images=bool(ctx.include_images),
+                output_format=str(ctx.output_format),
+                native_fetch=bool(ctx.native_fetch),
+                allow_http=bool(ctx.allow_http),
+                provider=provider_name,
+            )
+            hit = self._cache.get(cache_key)
+            if isinstance(hit, FetchResult):
+                return hit
+
         try:
-            return self._primary_provider.fetch(url)
+            result = self._primary_provider.fetch(url)
         except ProviderError as e:
             category, message = _provider_error_to_fetch(e)
             return FetchResult.failure(url, message, category)
@@ -380,6 +445,14 @@ class WebSearchClient:
                 f"Fetch failed: {sanitize_provider_message(str(e))}",
                 ErrorCategory.UNKNOWN,
             )
+        if cache_key is not None and result.ok and self._cache is not None:
+            self._cache.set(
+                cache_key,
+                result,
+                ttl_seconds=self._fetch_ttl,
+                size=estimate_fetch_result_size(result),
+            )
+        return result
 
 
 def _resolve_client_settings(
@@ -533,6 +606,8 @@ def _single_provider_from_settings(
             DdgsProviderConfig(
                 timeout=int(p.timeout_seconds),
                 allow_unsupported_filters=p.allow_unsupported_filters,
+                retry_max=int(p.retry_max),
+                retry_backoff_seconds=float(p.retry_backoff_seconds),
             ),
             **kwargs,
         )

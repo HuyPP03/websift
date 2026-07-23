@@ -1,6 +1,14 @@
 # websift — Tài liệu tiếng Việt
 
-MCP server nhẹ, miễn phí, tự chủ (self-hosted) cung cấp khả năng truy cập web thời gian thực cho AI agents — tìm kiếm DuckDuckGo + lấy nội dung trang web (HTML → Markdown, PDF → text) — với bảo vệ SSRF và DNS pinning tích hợp. **Không cần API key.**
+Thư viện Python nhẹ và MCP server miễn phí, tự host cho truy cập web thời gian thực — tìm kiếm DuckDuckGo + lấy nội dung trang (HTML → Markdown, PDF → text) — với bảo vệ SSRF và DNS pinning. **Không cần API key** cho provider mặc định.
+
+```python
+from websift import WebSearchClient
+
+print(WebSearchClient().search("python asyncio"))
+```
+
+Dùng import trực tiếp khi chỉ cần search/fetch trong process; chạy `websift serve` khi cần tool MCP cho AI client.
 
 ---
 
@@ -264,6 +272,10 @@ websift fetch https://example.com/doc.pdf --max-chars 20000
 
 Cờ CLI ghi đè biến môi trường tương ứng cho process hiện tại. Ma trận env đầy đủ nằm ở [Cấu hình](#cấu-hình).
 
+### Đổi tên import (`web_search` → `websift`)
+
+Từ **1.0.0**, import path là `websift` (không còn `web_search`). MCP tools vẫn là `web_search` / `web_fetch`.
+
 ### Như một thư viện Python (Import trực tiếp)
 
 Dùng `WebSearchClient` trực tiếp trong code Python — **không cần chạy server**:
@@ -450,10 +462,17 @@ The Python programming language...
 | `FETCH_TIMEOUT_SECONDS`  | `30`              | Timeout fetch trang (giây)                                              |
 | `SEARCH_TIMEOUT`         | (alias)             | **Deprecated**: nếu set và thiếu timeout cụ thể thì map cả hai |
 | `SEARCH_FALLBACK_PROVIDERS` | (rỗng)           | Chuỗi fallback allowlist (không fallback config/auth error)           |
+| `SEARCH_RETRY_MAX`       | `1`               | Số lần retry thêm sau lần đầu (DDGS + HTTP providers)               |
+| `SEARCH_RETRY_BACKOFF_SECONDS` | `0.5`        | Backoff cơ sở (giây); nhân đôi mỗi lần, có trần                     |
 | `PAGE_MAX_CHARS`         | `128000`          | Số ký tự tối đa trả về từ fetch                                 |
 | `SEARCH_MAX_CONCURRENCY` | `8`               | Số search đồng thời tối đa                                      |
 | `FETCH_MAX_CONCURRENCY`  | `16`              | Số fetch trang đồng thời tối đa                                 |
 | `PDF_MAX_CONCURRENCY`    | `2`               | Số parse PDF đồng thời tối đa                                   |
+| `CACHE_ENABLED`          | `false`           | Bật cache TTL/LRU trong bộ nhớ cho search/fetch thành công          |
+| `SEARCH_CACHE_TTL_SECONDS` | `300`           | TTL cache search khi bật                                              |
+| `FETCH_CACHE_TTL_SECONDS`  | `600`           | TTL cache fetch khi bật                                               |
+| `CACHE_MAX_ENTRIES`      | `256`             | Số entry cache tối đa                                               |
+| `CACHE_MAX_BYTES`        | `33554432`        | Xấp xỉ dung lượng payload cache (byte)                              |
 
 ### Provider tìm kiếm
 
