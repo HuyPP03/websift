@@ -239,15 +239,19 @@ websift serve --provider ddgs --max-results 8 --log-level DEBUG
 # One-shot library-style commands (no MCP server)
 websift search "Python 3.12 features"
 websift search "asyncio tutorial" -n 10 --provider ddgs
+websift search "python" --json          # structured JSON for scripts
 websift fetch https://docs.python.org/3/
 websift fetch https://example.com/doc.pdf --max-chars 20000
+websift fetch https://example.com --json
 ```
 
 | Command                         | Purpose                        |
 | ------------------------------- | ------------------------------ |
 | `websift` / `websift serve` | Run the MCP server             |
 | `websift search QUERY`        | Print search results to stdout |
+| `websift search QUERY --json` | JSON: `ok` / `results` / `error` (exit `1` if not ok) |
 | `websift fetch URL`           | Print page/PDF text to stdout  |
+| `websift fetch URL --json`    | JSON: `ok` / `content` / `error` (exit `1` if not ok) |
 | `websift --version` / `-V`  | Print package version          |
 | `websift --help` / `-h`     | Show help                      |
 
@@ -269,6 +273,10 @@ print(results)
 # Fetch a web page (HTML → Markdown, PDF → text)
 content = client.fetch("https://docs.python.org/3/")
 print(content)
+
+# Async (offloads sync search/fetch to a worker thread)
+# results = await client.asearch("Python 3.12 features")
+# content = await client.afetch("https://docs.python.org/3/")
 ```
 
 #### Customizing `WebSearchClient`

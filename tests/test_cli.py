@@ -71,6 +71,110 @@ def test_cli_fetch_delegates(monkeypatch, capsys):
     assert "PAGE:https://example.com/" in capsys.readouterr().out
 
 
+def test_cli_search_json(monkeypatch, capsys):
+    import json
+
+    from websift import cli as cli_mod
+    from websift.models import SearchRequest, SearchResponse, SearchResult
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def search_structured(self, query: str):
+            return SearchResponse(
+                request=SearchRequest(query=query, max_results=5),
+                results=(
+                    SearchResult(
+                        title="T",
+                        url="https://example.com/",
+                        snippet="S",
+                        rank=1,
+                        source="fake",
+                    ),
+                ),
+            )
+
+    monkeypatch.setattr(cli_mod, "WebSearchClient", FakeClient)
+    with pytest.raises(SystemExit) as ei:
+        main(["search", "hello", "--json"])
+    assert ei.value.code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["query"] == "hello"
+    assert payload["results"][0]["title"] == "T"
+
+
+def test_cli_search_json_error_exit_1(monkeypatch, capsys):
+    import json
+
+    from websift import cli as cli_mod
+    from websift.models import SearchRequest, SearchResponse
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def search_structured(self, query: str):
+            return SearchResponse(
+                request=SearchRequest(query=query, max_results=5),
+                error_category="rate_limit",
+                error_message="Search failed: rate",
+            )
+
+    monkeypatch.setattr(cli_mod, "WebSearchClient", FakeClient)
+    with pytest.raises(SystemExit) as ei:
+        main(["search", "q", "--json"])
+    assert ei.value.code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert payload["error"]["category"] == "rate_limit"
+
+
+def test_cli_fetch_json(monkeypatch, capsys):
+    import json
+
+    from websift import cli as cli_mod
+    from websift.models import FetchResult
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def fetch_structured(self, url: str):
+            return FetchResult.success(url, "content-body", final_url=url, status_code=200)
+
+    monkeypatch.setattr(cli_mod, "WebSearchClient", FakeClient)
+    with pytest.raises(SystemExit) as ei:
+        main(["fetch", "https://example.com/", "--json"])
+    assert ei.value.code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["content"] == "content-body"
+    assert payload["url"] == "https://example.com/"
+
+
+def test_cli_fetch_json_error_exit_1(monkeypatch, capsys):
+    import json
+
+    from websift import cli as cli_mod
+    from websift.models import FetchResult
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def fetch_structured(self, url: str):
+            return FetchResult.failure(url, "No URL provided.", "empty_input")
+
+    monkeypatch.setattr(cli_mod, "WebSearchClient", FakeClient)
+    with pytest.raises(SystemExit) as ei:
+        main(["fetch", "", "--json"])
+    assert ei.value.code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+
+
 def test_cli_serve_wires_create_server(monkeypatch):
     from websift import cli as cli_mod
 

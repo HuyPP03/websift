@@ -10,6 +10,10 @@ Usage:
     client.search("python asyncio tutorial")
     client.fetch("https://docs.python.org/3/library/asyncio.html")
 
+    # Async (worker-thread offload of the sync path)
+    await client.asearch("python asyncio")
+    await client.afetch("https://docs.python.org/3/")
+
     # Custom configuration
     client = WebSearchClient(
         max_results=10,
@@ -20,7 +24,7 @@ Usage:
     )
 """
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 
 from websift.client import WebSearchClient
 from websift.settings import AppSettings

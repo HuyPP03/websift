@@ -7,12 +7,15 @@ Examples::
     websift serve
     websift serve --host 0.0.0.0 --port 9000
     websift search "python 3.12 features"
+    websift search "python" --json
     websift fetch https://docs.python.org/3/
+    websift fetch https://example.com --json
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from dataclasses import replace
 from typing import Sequence
@@ -77,6 +80,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Search timeout in seconds",
     )
+    search.add_argument(
+        "--json",
+        action="store_true",
+        help="Print structured JSON (ok/results/error) for scripting",
+    )
     search.set_defaults(_handler="search")
 
     fetch = sub.add_parser(
@@ -97,6 +105,11 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help="Fetch timeout in seconds",
+    )
+    fetch.add_argument(
+        "--json",
+        action="store_true",
+        help="Print structured JSON (ok/content/error) for scripting",
     )
     fetch.set_defaults(_handler="fetch")
 
@@ -252,6 +265,10 @@ def cmd_search(args: argparse.Namespace) -> int:
     except SettingsError as e:
         print(f"websift: configuration error: {e}", file=sys.stderr)
         return 2
+    if getattr(args, "json", False):
+        response = client.search_structured(args.query)
+        print(json.dumps(response.to_dict(), ensure_ascii=False))
+        return 0 if response.ok else 1
     print(client.search(args.query))
     return 0
 
@@ -266,6 +283,10 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     except SettingsError as e:
         print(f"websift: configuration error: {e}", file=sys.stderr)
         return 2
+    if getattr(args, "json", False):
+        result = client.fetch_structured(args.url)
+        print(json.dumps(result.to_dict(), ensure_ascii=False))
+        return 0 if result.ok else 1
     print(client.fetch(args.url))
     return 0
 

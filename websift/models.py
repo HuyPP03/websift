@@ -43,6 +43,18 @@ class SearchResult:
     rank: int | None = None
     source: str | None = None
 
+    def to_dict(self) -> dict:
+        out: dict = {
+            "title": self.title,
+            "url": self.url,
+            "snippet": self.snippet,
+        }
+        if self.rank is not None:
+            out["rank"] = self.rank
+        if self.source is not None:
+            out["source"] = self.source
+        return out
+
 
 @dataclass(frozen=True)
 class SearchResponse:
@@ -56,6 +68,23 @@ class SearchResponse:
     @property
     def ok(self) -> bool:
         return self.error_category is None
+
+    def to_dict(self) -> dict:
+        """JSON-serializable payload for CLI ``--json`` and scripting."""
+        return {
+            "ok": self.ok,
+            "query": self.request.query,
+            "max_results": self.request.max_results,
+            "results": [r.to_dict() for r in self.results],
+            "error": (
+                None
+                if self.ok
+                else {
+                    "category": self.error_category,
+                    "message": self.error_message,
+                }
+            ),
+        }
 
 
 @dataclass(frozen=True)
@@ -77,6 +106,29 @@ class FetchResult:
     @property
     def ok(self) -> bool:
         return self.error_category is None
+
+    def to_dict(self) -> dict:
+        """JSON-serializable payload for CLI ``--json`` and scripting."""
+        return {
+            "ok": self.ok,
+            "url": self.requested_url,
+            "final_url": self.final_url or self.requested_url,
+            "content": self.content,
+            "content_type": self.content_type,
+            "status_code": self.status_code,
+            "bytes_read": self.bytes_read,
+            "redirect_count": self.redirect_count,
+            "truncated": self.truncated,
+            "overflow": self.overflow,
+            "error": (
+                None
+                if self.ok
+                else {
+                    "category": self.error_category,
+                    "message": self.error_message,
+                }
+            ),
+        }
 
     @classmethod
     def failure(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from dataclasses import replace
 
@@ -193,6 +194,7 @@ class WebSearchClient:
     * Filters: ``safe_search``, ``region``, ``time_range``, ``fallback_providers``
     * Extraction: ``include_links``, ``include_images``, ``output_format``, ``native_fetch``
     * Full control: ``settings=AppSettings(...)`` or ``AppSettings.from_env()``
+    * Async: ``await client.asearch(...)`` / ``await client.afetch(...)``
 
     Fetch is owned by the primary search provider (``BaseProvider.fetch``).
     Tavily/Exa may use native extract when configured with an API key.
@@ -343,6 +345,22 @@ class WebSearchClient:
 
     def fetch(self, url: str) -> str:
         return format_fetch_result(self.fetch_structured(url))
+
+    async def asearch(self, query: str) -> str:
+        """Async search — runs the sync provider path in a worker thread."""
+        return await asyncio.to_thread(self.search, query)
+
+    async def afetch(self, url: str) -> str:
+        """Async fetch — runs the sync provider path in a worker thread."""
+        return await asyncio.to_thread(self.fetch, url)
+
+    async def asearch_structured(self, query: str) -> SearchResponse:
+        """Async structured search (same shape as ``search_structured``)."""
+        return await asyncio.to_thread(self.search_structured, query)
+
+    async def afetch_structured(self, url: str) -> FetchResult:
+        """Async structured fetch (same shape as ``fetch_structured``)."""
+        return await asyncio.to_thread(self.fetch_structured, url)
 
     def search_structured(self, query: str) -> SearchResponse:
         """Internal structured search; public ``search()`` formats this to ``str``."""

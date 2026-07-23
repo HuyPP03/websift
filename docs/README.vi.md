@@ -258,15 +258,19 @@ websift serve --provider ddgs --max-results 8 --log-level DEBUG
 # Lệnh one-shot (không cần MCP server)
 websift search "tính năng Python 3.12"
 websift search "asyncio tutorial" -n 10 --provider ddgs
+websift search "python" --json          # JSON có cấu trúc cho script
 websift fetch https://docs.python.org/3/
 websift fetch https://example.com/doc.pdf --max-chars 20000
+websift fetch https://example.com --json
 ```
 
 | Lệnh | Mục đích |
 | ---- | -------- |
 | `websift` / `websift serve` | Chạy MCP server |
 | `websift search QUERY` | In kết quả tìm kiếm ra stdout |
+| `websift search QUERY --json` | JSON: `ok` / `results` / `error` (exit `1` nếu lỗi) |
 | `websift fetch URL` | In nội dung trang/PDF ra stdout |
+| `websift fetch URL --json` | JSON: `ok` / `content` / `error` (exit `1` nếu lỗi) |
 | `websift --version` / `-V` | In version package |
 | `websift --help` / `-h` | Hiện help |
 
@@ -292,6 +296,10 @@ print(results)
 # Lấy nội dung trang web (HTML → Markdown, PDF → text)
 content = client.fetch("https://docs.python.org/3/")
 print(content)
+
+# Async (chạy sync search/fetch trên worker thread)
+# results = await client.asearch("tính năng Python 3.12")
+# content = await client.afetch("https://docs.python.org/3/")
 ```
 
 #### Tùy biến `WebSearchClient`
