@@ -3,6 +3,9 @@
 STDIO transport does not use bearer tokens (process-local trust). Remote
 streamable-http/SSE transports may require ``Authorization: Bearer <token>``
 when ``MCP_AUTH_MODE=bearer``.
+
+The ``mcp`` package is optional (``pip install 'websift[mcp]'``). MCP/pydantic
+imports happen only when bearer auth helpers run.
 """
 
 from __future__ import annotations
@@ -10,13 +13,12 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-from typing import Any, Callable
-
-from mcp.server.auth.provider import AccessToken
-from mcp.server.auth.settings import AuthSettings as McpAuthSettings
-from pydantic import AnyHttpUrl
+from typing import TYPE_CHECKING, Any, Callable
 
 from websift.settings import AppSettings, AuthSettings
+
+if TYPE_CHECKING:
+    from mcp.server.auth.provider import AccessToken
 
 # Synthetic OAuth resource identity for static shared-secret bearer mode.
 # MCP SDK requires issuer/resource URLs when auth middleware is enabled; they
@@ -39,6 +41,8 @@ class StaticBearerTokenVerifier:
         self._expected_digest = hashlib.sha256(expected).digest()
 
     async def verify_token(self, token: str) -> AccessToken | None:
+        from mcp.server.auth.provider import AccessToken
+
         provided = (token or "").encode("utf-8")
         provided_digest = hashlib.sha256(provided).digest()
         if not secrets.compare_digest(provided_digest, self._expected_digest):
@@ -173,6 +177,9 @@ def mcp_auth_kwargs(settings: AppSettings) -> dict[str, Any]:
     if not token:
         # validate() should have caught this; fail closed.
         raise ValueError("Bearer auth enabled but token is empty")
+
+    from mcp.server.auth.settings import AuthSettings as McpAuthSettings
+    from pydantic import AnyHttpUrl
 
     base = resource_base_url(settings.server.host, settings.server.port)
     return {

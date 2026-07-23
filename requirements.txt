@@ -1,4 +1,4 @@
-mcp>=1.9.0,<2
+# Base library deps (search/fetch). For MCP server: pip install 'websift[mcp]'
 ddgs>=9.0.0
 beautifulsoup4>=4.12.0
 pypdf>=4.0.0

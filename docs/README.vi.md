@@ -191,6 +191,7 @@ server.py             # entry mỏng → websift.cli:main
 
 ```bash
 pip install websift
+# MCP server: pip install 'websift[mcp]'
 ```
 
 Vậy là xong — bạn có thể dùng như **thư viện Python** (import trực tiếp) hoặc như **MCP server** (cho AI clients).
@@ -493,6 +494,7 @@ Chỉ cấu hình server-wide (`SEARCH_PROVIDER`). Tool MCP không nhận provid
 | **brave** | `websift[brave]` | `BRAVE_API_KEY`, `BRAVE_BASE_URL` tùy chọn | |
 | **tavily** | `websift[tavily]` | `TAVILY_API_KEY`, `TAVILY_BASE_URL` tùy chọn | `web_fetch` dùng `/extract` khi `PROVIDER_NATIVE_FETCH=true` |
 | **exa** | `websift[exa]` | `EXA_API_KEY`, `EXA_BASE_URL` tùy chọn | |
+| **serper**        | `websift[serper]` | `SERPER_API_KEY` (bắt buộc), tùy chọn `SERPER_BASE_URL` | Google SERP qua Serper API |
 
 `pip install 'websift[providers]'` — alias toàn bộ provider HTTP (hiện không thêm wheel ngoài base; adapter dùng stdlib HTTP).
 

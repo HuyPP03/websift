@@ -33,7 +33,8 @@ WORKDIR /app
 
 COPY --from=builder /build/dist/*.whl /tmp/
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir /tmp/websift-*.whl \
+    && WHL=$(ls /tmp/websift-*.whl | head -1) \
+    && pip install --no-cache-dir "${WHL}[mcp]" \
     && rm -f /tmp/websift-*.whl
 
 USER websift

@@ -68,7 +68,7 @@ That's it — simple, focused, and reliable.
 ### Core Strengths
 
 - **🆓 Completely Free (default)** — Default **DDGS** provider needs no API key or subscription. Upstream DuckDuckGo and target sites may still rate-limit or block clients.
-- **🪶 Lightweight** — Single Python process, ~4 dependencies, runs in a tiny Docker container (`python:3.12-slim` ≈ 150 MB).
+- **🪶 Lightweight** — Single Python process, few base dependencies (MCP optional), runs in a tiny Docker container (`python:3.12-slim` ≈ 150 MB).
 - **🔒 Secure by Default** — SSRF protection (global-only IP policy, multi-answer DNS validation, no URL userinfo), DNS pinning + SNI, redirect re-validation, body/decompress limits, and content-type checks.
 - **🌐 Universal MCP Compatibility** — Works with any MCP client (VS Code, Claude, Cursor, Windsurf, JetBrains, custom agents, etc.).
 - **📄 Smart Content Extraction** — HTML → Markdown via BeautifulSoup (main-content selection), PDF → text via **pypdf only**, binary detection, charset order BOM → HTTP → meta → UTF-8.
@@ -97,7 +97,7 @@ That's it — simple, focused, and reliable.
 | **Web Fetch**        | ✅ HTML + PDF          | ✅ Yes                      | ✅ Yes (deep)         | ✅ Yes                | ❌ No                       |
 | **SSRF Protection**  | ✅ Built-in            | ⚠️ Managed                | ⚠️ Managed          | ⚠️ Managed          | ⚠️ Managed                |
 | **Container Size**   | ~150 MB                | N/A (SaaS)                  | ~500 MB+              | N/A (SaaS)            | N/A (SaaS)                  |
-| **Dependencies**     | 4 packages             | N/A                         | Many                  | N/A                   | N/A                         |
+| **Dependencies**     | 3 base (+ optional MCP) | N/A                         | Many                  | N/A                   | N/A                         |
 | **Rate Limits**      | Upstream DDGS / sites  | Provider limits             | Provider limits       | Provider limits       | Provider limits             |
 | **Privacy**          | Self-hosted + outbound | ⚠️ Data to provider       | ⚠️ Data to provider | ⚠️ Data to provider | ⚠️ Data to provider       |
 
@@ -169,7 +169,11 @@ server.py             # thin entry → websift.cli:main
 pip install websift
 ```
 
-That's it — you can now use it as a **Python library** (direct import) or as an **MCP server** (for AI clients).
+That's it for the **Python library** and CLI `search` / `fetch`. For the **MCP server** (`websift serve`):
+
+```bash
+pip install 'websift[mcp]'
+```
 
 ### Option 2: Docker Compose
 
@@ -203,12 +207,15 @@ docker run -d --name websift -p 8787:8787 \
 ### Option 4: Local Python (No Docker)
 
 ```bash
-# Recommended: install the package (editable for development)
-pip install -e ".[dev]"
+# Recommended: install the package (editable for development; includes MCP)
+pip install -e ".[dev]"  # includes MCP for server tests
 
-# Or runtime deps only (mirrors pyproject.toml)
+# Or library-only runtime deps (mirrors base pyproject.toml)
 pip install -r requirements.txt
 pip install -e .
+
+# MCP server needs the optional extra
+pip install -e ".[mcp]"
 
 # Run the server (console entry or module)
 websift serve
@@ -300,7 +307,7 @@ client = WebSearchClient(
     search_timeout=15,
     fetch_timeout=45,
     max_page_chars=64_000,
-    provider="ddgs",           # or "brave" / "tavily" / "exa" / "searxng"
+    provider="ddgs",           # or "brave" / "tavily" / "exa" / "searxng" / "serper"
     include_links=True,
     include_images=False,
     output_format="markdown",  # or "text"
@@ -471,6 +478,7 @@ Server-wide only (`SEARCH_PROVIDER`). MCP tools never accept provider name, base
 | **brave**          | `websift[brave]`                                 | `BRAVE_API_KEY` (required), optional `BRAVE_BASE_URL`     | Official Web Search API                                                           |
 | **tavily**         | `websift[tavily]`                                | `TAVILY_API_KEY` (required), optional `TAVILY_BASE_URL`   |                                                                                   |
 | **exa**            | `websift[exa]`                                   | `EXA_API_KEY` (required), optional `EXA_BASE_URL`         |                                                                                   |
+| **serper**        | `websift[serper]` (marker; no extra deps today) | `SERPER_API_KEY` (required), optional `SERPER_BASE_URL` | Google SERP via Serper API                                                      |
 
 Convenience: `pip install 'websift[providers]'` (all keyed/self-hosted HTTP providers — currently no extra wheels beyond the base package; adapters use stdlib HTTP).
 
@@ -888,7 +896,7 @@ Image runs as non-root (`websift` uid 10001), entrypoint `websift`, TCP healthch
 
 ### Q: Does this require an API key?
 
-**Not for the default DDGS provider.** DuckDuckGo search needs no key. Optional providers **Brave / Tavily / Exa** need server env keys (`BRAVE_API_KEY`, …); **SearXNG** needs `SEARXNG_BASE_URL`. Keys are never accepted via MCP tool arguments — see [Search providers](#search-providers).
+**Not for the default DDGS provider.** DuckDuckGo search needs no key. Optional providers **Brave / Tavily / Exa / Serper** need server env keys (`BRAVE_API_KEY`, `SERPER_API_KEY`, …); **SearXNG** needs `SEARXNG_BASE_URL`. Keys are never accepted via MCP tool arguments — see [Search providers](#search-providers).
 
 ### Q: Is this unlimited / no rate limits?
 
@@ -931,7 +939,7 @@ By default, SSRF protection blocks private IP ranges. To allow internal sites, m
 
 ### Q: Can I use this as a Python library (without MCP)?
 
-**Yes!** Just `pip install websift` and import directly:
+**Yes!** Just `pip install websift` (no MCP extra) and import directly:
 
 ```python
 from websift import WebSearchClient

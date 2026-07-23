@@ -33,7 +33,7 @@ jobs:
       - name: Install package + dev tools
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,mcp]"
 
       - name: Ruff check
         run: ruff check websift tests
@@ -89,8 +89,6 @@ jobs:
           from importlib.metadata import entry_points, version
           from websift import WebSearchClient
           from websift.cli import main
-          from websift.server import create_server
-          from websift.settings import AppSettings, ServerSettings
 
           assert websift.__version__ == version("websift"), (
               websift.__version__,
@@ -101,13 +99,24 @@ jobs:
           assert client.search("") == "No query provided."
           assert client.fetch("") == "No URL provided."
 
-          app = create_server(
-              AppSettings(server=ServerSettings(host="127.0.0.1", transport="stdio")),
-              warn_public_bind=False,
-          )
-          assert app.transport == "stdio"
-          assert callable(app.web_search)
-          assert callable(app.web_fetch)
+          # Base wheel must not require mcp for library use.
+          try:
+              import mcp  # noqa: F401
+              has_mcp = True
+          except ImportError:
+              has_mcp = False
+          assert has_mcp is False, "base wheel must not install mcp"
+
+          from websift.server import create_server
+          from websift.settings import AppSettings, ServerSettings
+          try:
+              create_server(
+                  AppSettings(server=ServerSettings(host="127.0.0.1", transport="stdio")),
+                  warn_public_bind=False,
+              )
+              raise SystemExit("create_server should fail without mcp extra")
+          except ImportError as e:
+              assert "websift[mcp]" in str(e)
 
           # Console entry points to CLI — do NOT execute bare main() (starts server).
           eps = entry_points()
@@ -124,14 +133,31 @@ jobs:
           assert "serve" in h.stdout
           v = subprocess.run(["/tmp/websift-smoke/bin/websift", "--version"], capture_output=True, text=True, check=True)
           assert websift.__version__ in v.stdout
-          print("smoke ok", websift.__version__, "entry", websift_eps[0].value)
+          print("base smoke ok", websift.__version__, "entry", websift_eps[0].value)
+          PY
+
+          # MCP extra enables create_server.
+          WHL=$(ls dist/websift-*.whl | head -1)
+          /tmp/websift-smoke/bin/pip install "${WHL}[mcp]"
+          /tmp/websift-smoke/bin/python - <<'PY'
+          from websift.server import create_server
+          from websift.settings import AppSettings, ServerSettings
+
+          app = create_server(
+              AppSettings(server=ServerSettings(host="127.0.0.1", transport="stdio")),
+              warn_public_bind=False,
+          )
+          assert app.transport == "stdio"
+          assert callable(app.web_search)
+          assert callable(app.web_fetch)
+          print("mcp smoke ok")
           PY
 
       - name: Smoke optional provider extras
         run: |
           set -euo pipefail
           WHL=$(ls dist/websift-*.whl | head -1)
-          for extra in searxng brave tavily exa providers; do
+          for extra in searxng brave tavily exa serper providers; do
             echo "::group::extra=${extra}"
             rm -rf "/tmp/websift-extra-${extra}"
             python -m venv "/tmp/websift-extra-${extra}"
@@ -139,13 +165,14 @@ jobs:
             "/tmp/websift-extra-${extra}/bin/pip" install "${WHL}[${extra}]"
             "/tmp/websift-extra-${extra}/bin/python" - <<'PY'
           from websift.providers.registry import list_providers, is_registered
-          from websift.providers import brave, ddgs, exa, searxng, tavily
+          from websift.providers import brave, ddgs, exa, searxng, serper, tavily
 
           names = set(list_providers())
-          for n in ("ddgs", "searxng", "brave", "tavily", "exa"):
+          for n in ("ddgs", "searxng", "brave", "tavily", "exa", "serper"):
               assert n in names and is_registered(n), n
           assert brave.BraveProvider and tavily.TavilyProvider
           assert exa.ExaProvider and searxng.SearxngProvider and ddgs.DdgsProvider
+          assert serper.SerperProvider
           print("provider modules ok", sorted(names))
           PY
             echo "::endgroup::"
@@ -206,7 +233,7 @@ jobs:
       - name: Image must not embed common secret env values
         run: |
           set -euo pipefail
-          if docker history --no-trunc websift:ci | grep -Eiq 'MCP_BEARER_TOKEN=|BRAVE_API_KEY=|TAVILY_API_KEY=|EXA_API_KEY='; then
+          if docker history --no-trunc websift:ci | grep -Eiq 'MCP_BEARER_TOKEN=|BRAVE_API_KEY=|TAVILY_API_KEY=|EXA_API_KEY=|SERPER_API_KEY='; then
             echo "secret-like ENV assignment found in image history" >&2
             exit 1
           fi

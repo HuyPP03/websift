@@ -250,7 +250,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
         print(f"websift: configuration error: {e}", file=sys.stderr)
         return 2
 
-    create_server(settings).run()
+    try:
+        create_server(settings).run()
+    except ImportError as e:
+        print(f"websift: {e}", file=sys.stderr)
+        return 2
     return 0
 
 

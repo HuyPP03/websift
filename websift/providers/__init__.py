@@ -25,6 +25,7 @@ from websift.providers.exa import ExaProvider, ExaProviderConfig
 from websift.providers.fallback import FallbackSearchProvider
 from websift.providers.registry import create_provider, get_default_provider, list_providers
 from websift.providers.searxng import SearxngProvider, SearxngProviderConfig
+from websift.providers.serper import SerperProvider, SerperProviderConfig
 from websift.providers.tavily import TavilyProvider, TavilyProviderConfig
 
 __all__ = [
@@ -50,6 +51,8 @@ __all__ = [
     "SearchProvider",
     "SearxngProvider",
     "SearxngProviderConfig",
+    "SerperProvider",
+    "SerperProviderConfig",
     "TavilyProvider",
     "TavilyProviderConfig",
     "create_provider",

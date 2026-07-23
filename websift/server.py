@@ -2,6 +2,8 @@
 
 Importing this module does **not** read environment variables or create a
 runtime client/MCP instance. Call ``create_server()`` or ``main()``.
+
+Requires optional dependency: ``pip install 'websift[mcp]'``.
 """
 
 from __future__ import annotations
@@ -9,16 +11,15 @@ from __future__ import annotations
 import warnings
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Any
 
-from mcp.server.fastmcp import FastMCP
-
-from websift.auth import install_http_guards, mcp_auth_kwargs
 from websift.client import WebSearchClient
 from websift.concurrency import WorkLimits
 from websift.logging_config import configure_logging, log_fetch, log_search
 from websift.settings import AppSettings
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "0:0:0:0:0:0:0:1"})
+_MCP_INSTALL_HINT = "MCP server support requires optional deps. Install with: pip install 'websift[mcp]'"
 
 
 def is_loopback_bind(host: str) -> bool:
@@ -43,7 +44,7 @@ def warn_if_public_bind(host: str) -> None:
 class ServerApp:
     """Runtime MCP server handle."""
 
-    mcp: FastMCP
+    mcp: Any
     client: WebSearchClient
     settings: AppSettings
     limits: WorkLimits
@@ -66,6 +67,14 @@ class ServerApp:
         self.mcp.run(transport=transport or self.transport)
 
 
+def _require_fastmcp() -> Any:
+    try:
+        from mcp.server.fastmcp import FastMCP
+    except ImportError as e:
+        raise ImportError(_MCP_INSTALL_HINT) from e
+    return FastMCP
+
+
 def create_server(
     settings: AppSettings | None = None,
     client: WebSearchClient | None = None,
@@ -79,7 +88,12 @@ def create_server(
     Pass ``AppSettings.from_env()`` from process entrypoints.
 
     Tool schemas stay query/url only — no provider name, base URL, or API key.
+
+    Requires ``websift[mcp]``.
     """
+    FastMCP = _require_fastmcp()
+    from websift.auth import install_http_guards, mcp_auth_kwargs
+
     settings = settings if settings is not None else AppSettings()
     settings.validate()
     if warn_public_bind:

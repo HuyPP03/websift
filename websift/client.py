@@ -54,6 +54,7 @@ from websift.providers.exa import ExaProviderConfig
 from websift.providers.fallback import FallbackSearchProvider
 from websift.providers.registry import create_provider, get_default_provider
 from websift.providers.searxng import SearxngProviderConfig
+from websift.providers.serper import SerperProviderConfig
 from websift.providers.tavily import TavilyProviderConfig
 from websift.settings import AppSettings, ProviderEndpoint, ProviderSettings
 
@@ -677,6 +678,20 @@ def _single_provider_from_settings(
             ExaProviderConfig(
                 api_key=ep.api_key or "",
                 base_url=ep.base_url or "https://api.exa.ai",
+                timeout=float(p.timeout_seconds),
+                allow_http=bool(p.allow_http),
+                allow_unsupported_filters=p.allow_unsupported_filters,
+                retry_max=int(p.retry_max),
+                retry_backoff_seconds=float(p.retry_backoff_seconds),
+            ),
+            **kwargs,
+        )
+    if name == "serper":
+        return create_provider(
+            "serper",
+            SerperProviderConfig(
+                api_key=ep.api_key or "",
+                base_url=ep.base_url or "https://google.serper.dev",
                 timeout=float(p.timeout_seconds),
                 allow_http=bool(p.allow_http),
                 allow_unsupported_filters=p.allow_unsupported_filters,

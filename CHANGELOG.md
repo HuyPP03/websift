@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-07-23
+
+### Added
+
+- **Serper** search provider (`SEARCH_PROVIDER=serper`, `SERPER_API_KEY`, optional `SERPER_BASE_URL`) — Google SERP via `google.serper.dev` using stdlib HTTP.
+- Optional install extra `websift[mcp]` for the MCP server runtime (FastMCP). Library, CLI `search`/`fetch`, and providers no longer require `mcp` at install time.
+- Empty marker extra `serper` (adapters ship in the base package).
+
+### Changed
+
+- Base package dependencies are library-only (`ddgs`, `beautifulsoup4`, `pypdf`). Install `pip install 'websift[mcp]'` (or `websift[dev]`) for MCP serve/auth tests.
+- Docker image installs the wheel with the `mcp` extra so `websift serve` works out of the box.
+- Importing `websift.server` / `websift.auth` no longer requires `mcp`; `create_server()` and bearer auth helpers import FastMCP lazily and raise a clear install hint if missing.
+- CLI `websift serve` surfaces the missing-MCP install hint as a configuration-style exit instead of a traceback.
+
 ## [1.1.0] - 2026-07-23
 
 ### Added

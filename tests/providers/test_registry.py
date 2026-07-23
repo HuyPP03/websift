@@ -21,6 +21,7 @@ def test_list_providers_includes_builtin_p1():
     assert "brave" in names
     assert "tavily" in names
     assert "exa" in names
+    assert "serper" in names
     assert names == tuple(sorted(names))
 
 
@@ -32,6 +33,8 @@ def test_is_registered_case_insensitive():
     assert is_registered("SEARXNG")
     assert is_registered("tavily")
     assert is_registered("EXA")
+    assert is_registered("serper")
+    assert is_registered("SERPER")
     assert not is_registered("serpapi")
     assert not is_registered("")
     assert not is_registered("  ")

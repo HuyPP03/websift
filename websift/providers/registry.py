@@ -14,6 +14,7 @@ from websift.providers.ddgs import DdgsProvider, DdgsProviderConfig
 from websift.providers.errors import ProviderConfigError
 from websift.providers.exa import ExaProvider, ExaProviderConfig
 from websift.providers.searxng import SearxngProvider, SearxngProviderConfig
+from websift.providers.serper import SerperProvider, SerperProviderConfig
 from websift.providers.tavily import TavilyProvider, TavilyProviderConfig
 
 ProviderFactory = Callable[..., SearchProvider]
@@ -116,6 +117,27 @@ def _make_exa(
     )
 
 
+def _make_serper(
+    cfg: Any,
+    *,
+    fetch_context: FetchContext | None = None,
+    pdf_semaphore: Any = None,
+) -> SearchProvider:
+    if isinstance(cfg, SerperProviderConfig):
+        return SerperProvider(cfg, fetch_context=fetch_context, pdf_semaphore=pdf_semaphore)
+    if isinstance(cfg, dict):
+        return SerperProvider(
+            SerperProviderConfig(**cfg),
+            fetch_context=fetch_context,
+            pdf_semaphore=pdf_semaphore,
+        )
+    raise ProviderConfigError(
+        "Serper requires SerperProviderConfig (api_key).",
+        code="missing_config",
+        provider="serper",
+    )
+
+
 # Allowlist only — no dynamic module/class paths from env or MCP.
 _REGISTRY: dict[str, ProviderFactory] = {
     "ddgs": _make_ddgs,
@@ -123,6 +145,7 @@ _REGISTRY: dict[str, ProviderFactory] = {
     "brave": _make_brave,
     "tavily": _make_tavily,
     "exa": _make_exa,
+    "serper": _make_serper,
 }
 
 

@@ -164,6 +164,10 @@ def _load_provider_endpoints(env: Mapping[str, str]) -> dict[str, ProviderEndpoi
             base_url=_get_optional_str(env, "EXA_BASE_URL"),
             api_key=_get_optional_str(env, "EXA_API_KEY"),
         ),
+        "serper": ProviderEndpoint(
+            base_url=_get_optional_str(env, "SERPER_BASE_URL"),
+            api_key=_get_optional_str(env, "SERPER_API_KEY"),
+        ),
     }
 
 
@@ -188,6 +192,11 @@ def _require_provider_credentials(name: str, provider: ProviderSettings, *, role
     if name == "exa" and not (ep.api_key or "").strip():
         raise SettingsError(
             f"EXA_API_KEY is required when {role} uses exa",
+            code="missing_api_key",
+        )
+    if name == "serper" and not (ep.api_key or "").strip():
+        raise SettingsError(
+            f"SERPER_API_KEY is required when {role} uses serper",
             code="missing_api_key",
         )
 

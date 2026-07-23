@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "websift"
 dynamic = ["version"]
-description = "Self-hosted MCP server for web search (DuckDuckGo) + page fetching. No API key required for the default DDGS provider."
+description = "Web search + page fetch library (DDGS default) with optional self-hosted MCP server. No API key required for the default provider."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -27,13 +27,16 @@ classifiers = [
 ]
 
 dependencies = [
-    "mcp>=1.9.0,<2",
     "ddgs>=9.0.0",
     "beautifulsoup4>=4.12.0",
     "pypdf>=4.0.0",
 ]
 
 [project.optional-dependencies]
+# MCP server runtime (FastMCP). Library/CLI search+fetch work without this.
+mcp = [
+    "mcp>=1.9.0,<2",
+]
 dev = [
     "build",
     "twine",
@@ -41,6 +44,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
+    "mcp>=1.9.0,<2",
 ]
 # HTTP search providers ship in the base package (stdlib urllib + package
 # provider_http). Extras are install markers for docs/CI and reserved if a
@@ -49,6 +53,7 @@ searxng = []
 brave = []
 tavily = []
 exa = []
+serper = []
 # Convenience alias: all keyed/self-hosted HTTP providers.
 providers = []
 
