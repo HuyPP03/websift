@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from web_search.models import SearchRequest
-from web_search.providers.base import ProviderCapabilities, validate_request_capabilities
-from web_search.providers.errors import ProviderConfigError
+from websift.models import SearchRequest
+from websift.providers.base import ProviderCapabilities, validate_request_capabilities
+from websift.providers.errors import ProviderConfigError
 
 
 def test_validate_ok_when_no_filters():

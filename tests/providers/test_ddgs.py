@@ -7,10 +7,10 @@ import types
 
 import pytest
 
-from web_search.client import WebSearchClient
-from web_search.models import ErrorCategory, SearchRequest
-from web_search.providers.ddgs import DdgsProvider, DdgsProviderConfig
-from web_search.providers.errors import (
+from websift.client import WebSearchClient
+from websift.models import ErrorCategory, SearchRequest
+from websift.providers.ddgs import DdgsProvider, DdgsProviderConfig
+from websift.providers.errors import (
     ProviderImportError,
     ProviderRateLimitError,
     ProviderTimeoutError,
@@ -174,7 +174,7 @@ def test_ddgs_provider_empty_results(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_ddgs_provider_unsupported_filter_rejected():
-    from web_search.providers.errors import ProviderConfigError
+    from websift.providers.errors import ProviderConfigError
 
     provider = DdgsProvider()
     with pytest.raises(ProviderConfigError) as ei:
@@ -208,7 +208,7 @@ def test_injected_provider_used():
         capabilities = DdgsProvider.capabilities
 
         def search(self, request):
-            from web_search.models import SearchResult
+            from websift.models import SearchResult
 
             return [
                 SearchResult(

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from web_search.client import WebSearchClient
-from web_search.models import ErrorCategory, FetchResult, SearchRequest, SearchResult
-from web_search.providers.base import BaseProvider, FetchContext
-from web_search.providers.ddgs import DdgsProvider
-from web_search.providers.errors import (
+from websift.client import WebSearchClient
+from websift.models import ErrorCategory, FetchResult, SearchRequest, SearchResult
+from websift.providers.base import BaseProvider, FetchContext
+from websift.providers.ddgs import DdgsProvider
+from websift.providers.errors import (
     ProviderAuthError,
     ProviderBillingError,
     ProviderRateLimitError,
@@ -16,10 +16,10 @@ from web_search.providers.errors import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
-from web_search.providers.exa import ExaProvider, ExaProviderConfig
-from web_search.providers.fallback import FallbackSearchProvider
-from web_search.providers.tavily import TavilyProvider, TavilyProviderConfig
-from web_search.settings import AppSettings, FetchSettings, ProviderSettings
+from websift.providers.exa import ExaProvider, ExaProviderConfig
+from websift.providers.fallback import FallbackSearchProvider
+from websift.providers.tavily import TavilyProvider, TavilyProviderConfig
+from websift.settings import AppSettings, FetchSettings, ProviderSettings
 
 
 class _StubSearch(BaseProvider):
@@ -128,7 +128,7 @@ def test_tavily_transient_falls_back(monkeypatch):
     def fake_fetch(*a, **k):
         return FetchResult.success(a[0], "generic-after-5xx", content_type="text/plain")
 
-    monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+    monkeypatch.setattr("websift.providers.base.fetch_raw", fake_fetch)
     assert p.fetch("https://example.com/").content == "generic-after-5xx"
 
 
@@ -142,7 +142,7 @@ def test_tavily_malformed_and_empty_content_paths(monkeypatch):
     def fake_fetch(*a, **k):
         return FetchResult.success(a[0], "generic-empty", content_type="text/plain")
 
-    monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+    monkeypatch.setattr("websift.providers.base.fetch_raw", fake_fetch)
     assert p.fetch("https://example.com/").content == "generic-empty"
 
     # completely missing results fields → ProviderResponseError → generic
@@ -150,7 +150,7 @@ def test_tavily_malformed_and_empty_content_paths(monkeypatch):
         TavilyProviderConfig(api_key="k"),
         http=_FakeHttp(responses=[{}]),
     )
-    monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+    monkeypatch.setattr("websift.providers.base.fetch_raw", fake_fetch)
     assert p2.fetch("https://example.com/").content == "generic-empty"
 
 
@@ -163,7 +163,7 @@ def test_exa_timeout_falls_back(monkeypatch):
     def fake_fetch(*a, **k):
         return FetchResult.success(a[0], "exa-generic", content_type="text/plain")
 
-    monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+    monkeypatch.setattr("websift.providers.base.fetch_raw", fake_fetch)
     assert p.fetch("https://example.com/").content == "exa-generic"
 
 
@@ -177,7 +177,7 @@ def test_exa_native_disabled(monkeypatch):
     def fake_fetch(*a, **k):
         return FetchResult.success(a[0], "forced-generic", content_type="text/plain")
 
-    monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+    monkeypatch.setattr("websift.providers.base.fetch_raw", fake_fetch)
     assert p.fetch("https://example.com/").content == "forced-generic"
     assert p._http.calls == [] if hasattr(p._http, "calls") else True
 
@@ -190,7 +190,7 @@ def test_validate_url_for_provider_blocks_userinfo():
 
 
 def test_provider_http_billing_status():
-    from web_search.provider_http import ProviderHttpClient, ProviderHttpConfig, ProviderHttpResponse
+    from websift.provider_http import ProviderHttpClient, ProviderHttpConfig, ProviderHttpResponse
 
     client = ProviderHttpClient(ProviderHttpConfig(base_url="https://api.example"))
     with pytest.raises(ProviderBillingError):

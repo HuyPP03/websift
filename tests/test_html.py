@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from web_search.html import html_to_markdown, truncate
+from websift.html import html_to_markdown, truncate
 
 FIXTURES = Path(__file__).parent / "fixtures" / "html"
 

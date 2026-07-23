@@ -1,14 +1,14 @@
-"""Shared constants for web_search."""
+"""Shared constants for websift."""
 
-MAX_FETCH_BYTES = 2 * 1024 * 1024  # 2 MB for normal pages (decompressed)
+MAX_FETCH_BYTES = 4 * 1024 * 1024  # 4 MB for normal pages (decompressed)
 MAX_PDF_FETCH_BYTES = 20 * 1024 * 1024  # 20 MB for PDFs (download)
-MAX_COMPRESSED_BYTES = 2 * 1024 * 1024  # wire/compressed download cap
+MAX_COMPRESSED_BYTES = 4 * 1024 * 1024  # wire/compressed download cap
 MAX_DECOMPRESSED_BYTES = 4 * 1024 * 1024  # post-decompression cap (bomb guard)
-MAX_PAGE_CHARS = 32_000  # chars fed to LLM
+MAX_PAGE_CHARS = 128_000  # chars fed to LLM
 MIN_MAIN_CONTENT_CHARS = 200
 MAX_REDIRECTS = 5
 PDF_MAX_PAGES = 50
-PDF_MAX_CHARS = 32_000
+PDF_MAX_CHARS = 128_000
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",

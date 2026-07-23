@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import web_search.settings as settings_mod
-from web_search.client import WebSearchClient
-from web_search.settings import (
+import websift.settings as settings_mod
+from websift.client import WebSearchClient
+from websift.settings import (
     AppSettings,
     ProviderSettings,
     ServerSettings,

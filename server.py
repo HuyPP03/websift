@@ -1,6 +1,6 @@
-"""MCP server entry point — delegates to web_search.server module."""
+"""Thin entry point — delegates to the websift CLI (``websift serve``)."""
 
-from web_search.server import main
+from websift.cli import main
 
 if __name__ == "__main__":
     main()

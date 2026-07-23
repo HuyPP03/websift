@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass, field, replace
 from typing import Mapping
 
-from web_search.config import (
+from websift.config import (
     MAX_COMPRESSED_BYTES,
     MAX_DECOMPRESSED_BYTES,
     MAX_FETCH_BYTES,
@@ -403,7 +403,7 @@ class AppSettings:
         if not name:
             raise SettingsError("SEARCH_PROVIDER must not be empty", code="missing_provider")
         # Allowlist check only when registry available; avoid circular import issues at module load.
-        from web_search.providers.registry import is_registered, list_providers
+        from websift.providers.registry import is_registered, list_providers
 
         if not is_registered(name):
             known = ", ".join(list_providers()) or "(none)"

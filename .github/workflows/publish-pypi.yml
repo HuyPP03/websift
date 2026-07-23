@@ -45,7 +45,7 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME}"
           TAG_VERSION="${TAG#v}"
-          PKG_VERSION="$(python -c 'from web_search import __version__; print(__version__)')"
+          PKG_VERSION="$(python -c 'from websift import __version__; print(__version__)')"
           echo "tag=${TAG} tag_version=${TAG_VERSION} package=${PKG_VERSION}"
           test "${TAG_VERSION}" = "${PKG_VERSION}"
 

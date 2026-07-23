@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from web_search.config import (
+from collections.abc import Sequence
+from dataclasses import replace
+
+from websift.config import (
     MAX_COMPRESSED_BYTES,
     MAX_DECOMPRESSED_BYTES,
     MAX_FETCH_BYTES,
@@ -13,13 +16,13 @@ from web_search.config import (
     PDF_MAX_CHARS,
     PDF_MAX_PAGES,
 )
-from web_search.models import (
+from websift.models import (
     ErrorCategory,
     FetchResult,
     SearchRequest,
     SearchResponse,
 )
-from web_search.providers.base import (
+from websift.providers.base import (
     GITHUB_README_HEADERS,
     BaseProvider,
     FetchContext,
@@ -34,9 +37,9 @@ __all__ = [
     "format_search_response",
     "process_fetched_body",
 ]
-from web_search.providers.brave import BraveProviderConfig
-from web_search.providers.ddgs import DdgsProviderConfig
-from web_search.providers.errors import (
+from websift.providers.brave import BraveProviderConfig
+from websift.providers.ddgs import DdgsProviderConfig
+from websift.providers.errors import (
     ProviderAuthError,
     ProviderBillingError,
     ProviderError,
@@ -46,12 +49,12 @@ from web_search.providers.errors import (
     ProviderUnavailableError,
     sanitize_provider_message,
 )
-from web_search.providers.exa import ExaProviderConfig
-from web_search.providers.fallback import FallbackSearchProvider
-from web_search.providers.registry import create_provider, get_default_provider
-from web_search.providers.searxng import SearxngProviderConfig
-from web_search.providers.tavily import TavilyProviderConfig
-from web_search.settings import AppSettings, ProviderSettings
+from websift.providers.exa import ExaProviderConfig
+from websift.providers.fallback import FallbackSearchProvider
+from websift.providers.registry import create_provider, get_default_provider
+from websift.providers.searxng import SearxngProviderConfig
+from websift.providers.tavily import TavilyProviderConfig
+from websift.settings import AppSettings, ProviderEndpoint, ProviderSettings
 
 # Backward-compatible alias for tests/docs that import the old name.
 _GITHUB_README_HEADERS = GITHUB_README_HEADERS
@@ -181,9 +184,15 @@ class WebSearchClient:
     No API key required. Uses DuckDuckGo (ddgs) for search by default,
     urllib for fetch, with SSRF protection + DNS pinning.
 
-    Prefer ``WebSearchClient(settings=AppSettings.from_env())`` for runtime
-    configuration. Legacy ``max_results`` / ``timeout`` / ``max_page_chars``
-    kwargs remain supported and map search+fetch to the shared timeout.
+    Configuration options (any combination):
+
+    * Simple kwargs: ``max_results``, ``timeout``, ``max_page_chars``
+    * Provider: ``provider="brave"`` (name) or a ``SearchProvider`` instance
+    * Timeouts: ``search_timeout`` / ``fetch_timeout`` (override shared ``timeout``)
+    * Credentials: ``api_key``, ``base_url`` for keyed/self-hosted providers
+    * Filters: ``safe_search``, ``region``, ``time_range``, ``fallback_providers``
+    * Extraction: ``include_links``, ``include_images``, ``output_format``, ``native_fetch``
+    * Full control: ``settings=AppSettings(...)`` or ``AppSettings.from_env()``
 
     Fetch is owned by the primary search provider (``BaseProvider.fetch``).
     Tavily/Exa may use native extract when configured with an API key.
@@ -194,45 +203,114 @@ class WebSearchClient:
         max_results: int = 5,
         timeout: int = 30,
         max_page_chars: int = MAX_PAGE_CHARS,
-        provider: SearchProvider | None = None,
+        provider: SearchProvider | str | None = None,
         settings: AppSettings | None = None,
         pdf_semaphore=None,
+        *,
+        search_timeout: float | None = None,
+        fetch_timeout: float | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        fallback_providers: Sequence[str] | None = None,
+        safe_search: str | None = None,
+        region: str | None = None,
+        time_range: str | None = None,
+        allow_unsupported_filters: bool | None = None,
+        allow_http: bool | None = None,
+        native_fetch: bool | None = None,
+        include_links: bool | None = None,
+        include_images: bool | None = None,
+        output_format: str | None = None,
     ):
-        self._settings = settings
-        self._pdf_semaphore = pdf_semaphore
-        if settings is not None:
-            self.max_results = settings.provider.max_results
-            # Public attribute kept for compatibility; equals search timeout.
-            self.timeout = int(settings.provider.timeout_seconds)
-            self.max_page_chars = settings.extraction.max_page_chars
-            self._search_timeout = float(settings.provider.timeout_seconds)
-            self._fetch_timeout = float(settings.fetch.timeout_seconds)
-            self._fetch_context = _fetch_context_from_settings(settings)
-            if provider is not None:
-                self._primary_provider = provider
-                if isinstance(provider, BaseProvider):
-                    provider._fetch_context = self._fetch_context
-                    provider._pdf_semaphore = pdf_semaphore
-                self._provider = provider
+        provider_obj: SearchProvider | None
+        provider_name: str | None
+        if isinstance(provider, str):
+            provider_obj = None
+            provider_name = provider.strip().lower() or None
+        else:
+            provider_obj = provider
+            provider_name = None
+
+        advanced = any(
+            v is not None
+            for v in (
+                search_timeout,
+                fetch_timeout,
+                api_key,
+                base_url,
+                fallback_providers,
+                safe_search,
+                region,
+                time_range,
+                allow_unsupported_filters,
+                allow_http,
+                native_fetch,
+                include_links,
+                include_images,
+                output_format,
+                provider_name,
+            )
+        )
+
+        if settings is not None or advanced:
+            resolved = _resolve_client_settings(
+                base=settings,
+                max_results=max_results,
+                timeout=timeout,
+                max_page_chars=max_page_chars,
+                provider_name=provider_name,
+                search_timeout=search_timeout,
+                fetch_timeout=fetch_timeout,
+                api_key=api_key,
+                base_url=base_url,
+                fallback_providers=fallback_providers,
+                safe_search=safe_search,
+                region=region,
+                time_range=time_range,
+                allow_unsupported_filters=allow_unsupported_filters,
+                allow_http=allow_http,
+                native_fetch=native_fetch,
+                include_links=include_links,
+                include_images=include_images,
+                output_format=output_format,
+                settings_provided=settings is not None,
+            )
+            self._settings = resolved
+            self._pdf_semaphore = pdf_semaphore
+            self.max_results = resolved.provider.max_results
+            self.timeout = int(resolved.provider.timeout_seconds)
+            self.max_page_chars = resolved.extraction.max_page_chars
+            self._search_timeout = float(resolved.provider.timeout_seconds)
+            self._fetch_timeout = float(resolved.fetch.timeout_seconds)
+            self._fetch_context = _fetch_context_from_settings(resolved)
+            if provider_obj is not None:
+                self._primary_provider = provider_obj
+                if isinstance(provider_obj, BaseProvider):
+                    provider_obj._fetch_context = self._fetch_context
+                    provider_obj._pdf_semaphore = pdf_semaphore
+                self._provider = provider_obj
             else:
                 self._primary_provider, self._provider = _providers_from_settings(
-                    settings,
+                    resolved,
                     fetch_context=self._fetch_context,
                     pdf_semaphore=pdf_semaphore,
                 )
         else:
+            # Fast legacy path: plain kwargs, default DDGS, no AppSettings tree.
+            self._settings = None
+            self._pdf_semaphore = pdf_semaphore
             self.max_results = max_results
             self.timeout = timeout
             self.max_page_chars = max_page_chars
             self._search_timeout = float(timeout)
             self._fetch_timeout = float(timeout)
             self._fetch_context = _legacy_fetch_context(timeout=timeout, max_page_chars=max_page_chars)
-            if provider is not None:
-                self._primary_provider = provider
-                if isinstance(provider, BaseProvider):
-                    provider._fetch_context = self._fetch_context
-                    provider._pdf_semaphore = pdf_semaphore
-                self._provider = provider
+            if provider_obj is not None:
+                self._primary_provider = provider_obj
+                if isinstance(provider_obj, BaseProvider):
+                    provider_obj._fetch_context = self._fetch_context
+                    provider_obj._pdf_semaphore = pdf_semaphore
+                self._provider = provider_obj
             else:
                 self._primary_provider = get_default_provider(
                     timeout=timeout,
@@ -302,6 +380,103 @@ class WebSearchClient:
                 f"Fetch failed: {sanitize_provider_message(str(e))}",
                 ErrorCategory.UNKNOWN,
             )
+
+
+def _resolve_client_settings(
+    *,
+    base: AppSettings | None,
+    max_results: int,
+    timeout: int,
+    max_page_chars: int,
+    provider_name: str | None,
+    search_timeout: float | None,
+    fetch_timeout: float | None,
+    api_key: str | None,
+    base_url: str | None,
+    fallback_providers: Sequence[str] | None,
+    safe_search: str | None,
+    region: str | None,
+    time_range: str | None,
+    allow_unsupported_filters: bool | None,
+    allow_http: bool | None,
+    native_fetch: bool | None,
+    include_links: bool | None,
+    include_images: bool | None,
+    output_format: str | None,
+    settings_provided: bool,
+) -> AppSettings:
+    """Merge constructor kwargs onto an AppSettings tree.
+
+    Without ``settings``: apply ``max_results`` / ``timeout`` / ``max_page_chars``
+    plus any advanced kwargs. With ``settings``: keep the settings tree and only
+    overlay non-None advanced kwargs (legacy positional defaults are ignored).
+    """
+    settings = base if base is not None else AppSettings()
+    prov = settings.provider
+    fetch = settings.fetch
+    extraction = settings.extraction
+
+    if not settings_provided:
+        st = float(search_timeout) if search_timeout is not None else float(timeout)
+        ft = float(fetch_timeout) if fetch_timeout is not None else float(timeout)
+        prov = replace(
+            prov,
+            max_results=max_results,
+            timeout_seconds=st,
+            name=provider_name if provider_name is not None else prov.name,
+        )
+        fetch = replace(fetch, timeout_seconds=ft)
+        extraction = replace(extraction, max_page_chars=max_page_chars)
+    else:
+        if provider_name is not None:
+            prov = replace(prov, name=provider_name)
+        if search_timeout is not None:
+            prov = replace(prov, timeout_seconds=float(search_timeout))
+        if fetch_timeout is not None:
+            fetch = replace(fetch, timeout_seconds=float(fetch_timeout))
+
+    if fallback_providers is not None:
+        prov = replace(
+            prov,
+            fallback_providers=tuple(str(x).strip() for x in fallback_providers if str(x).strip()),
+        )
+    if safe_search is not None:
+        prov = replace(prov, safe_search=safe_search)
+    if region is not None:
+        prov = replace(prov, region=region)
+    if time_range is not None:
+        prov = replace(prov, time_range=time_range)
+    if allow_unsupported_filters is not None:
+        prov = replace(prov, allow_unsupported_filters=bool(allow_unsupported_filters))
+    if allow_http is not None:
+        prov = replace(prov, allow_http=bool(allow_http))
+
+    name = (prov.name or "ddgs").strip().lower()
+    if api_key is not None or base_url is not None:
+        endpoints = dict(prov.endpoints or {})
+        prev = endpoints.get(name, ProviderEndpoint())
+        endpoints[name] = ProviderEndpoint(
+            base_url=base_url if base_url is not None else prev.base_url,
+            api_key=api_key if api_key is not None else prev.api_key,
+        )
+        # Keep primary fields in sync for the selected provider.
+        prov = replace(
+            prov,
+            api_key=api_key if api_key is not None else prov.api_key,
+            base_url=base_url if base_url is not None else prov.base_url,
+            endpoints=endpoints,
+        )
+
+    if native_fetch is not None:
+        fetch = replace(fetch, native_fetch=bool(native_fetch))
+    if include_links is not None:
+        extraction = replace(extraction, include_links=bool(include_links))
+    if include_images is not None:
+        extraction = replace(extraction, include_images=bool(include_images))
+    if output_format is not None:
+        extraction = replace(extraction, output_format=output_format)
+
+    return replace(settings, provider=prov, fetch=fetch, extraction=extraction)
 
 
 def _providers_from_settings(

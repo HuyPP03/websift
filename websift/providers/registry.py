@@ -8,13 +8,13 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from web_search.providers.base import FetchContext, SearchProvider
-from web_search.providers.brave import BraveProvider, BraveProviderConfig
-from web_search.providers.ddgs import DdgsProvider, DdgsProviderConfig
-from web_search.providers.errors import ProviderConfigError
-from web_search.providers.exa import ExaProvider, ExaProviderConfig
-from web_search.providers.searxng import SearxngProvider, SearxngProviderConfig
-from web_search.providers.tavily import TavilyProvider, TavilyProviderConfig
+from websift.providers.base import FetchContext, SearchProvider
+from websift.providers.brave import BraveProvider, BraveProviderConfig
+from websift.providers.ddgs import DdgsProvider, DdgsProviderConfig
+from websift.providers.errors import ProviderConfigError
+from websift.providers.exa import ExaProvider, ExaProviderConfig
+from websift.providers.searxng import SearxngProvider, SearxngProviderConfig
+from websift.providers.tavily import TavilyProvider, TavilyProviderConfig
 
 ProviderFactory = Callable[..., SearchProvider]
 

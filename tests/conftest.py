@@ -139,9 +139,9 @@ def allow_loopback_fetch(monkeypatch: pytest.MonkeyPatch, http_server):
     """Allow fetch_raw against the local fixture server (loopback is blocked in prod)."""
     from urllib.parse import urlparse
 
-    from web_search.security import ValidatedURL
-    from web_search.security import resolve_host as real_resolve
-    from web_search.security import validate_http_url as real_validate
+    from websift.security import ValidatedURL
+    from websift.security import resolve_host as real_resolve
+    from websift.security import validate_http_url as real_validate
 
     def _validate(url: str, *, allow_http: bool = True, allowed_ports=None):
         ok, reason, validated = real_validate(url, allow_http=allow_http, allowed_ports=allowed_ports)
@@ -179,8 +179,8 @@ def allow_loopback_fetch(monkeypatch: pytest.MonkeyPatch, http_server):
             return True, "", "127.0.0.1"
         return real_resolve(hostname, port)
 
-    monkeypatch.setattr("web_search.http.validate_http_url", _validate)
-    monkeypatch.setattr("web_search.http.resolve_host", _resolve)
+    monkeypatch.setattr("websift.http.validate_http_url", _validate)
+    monkeypatch.setattr("websift.http.resolve_host", _resolve)
     return http_server
 
 

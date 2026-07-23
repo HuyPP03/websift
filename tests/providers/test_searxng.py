@@ -7,17 +7,17 @@ from dataclasses import dataclass
 
 import pytest
 
-from web_search.client import WebSearchClient
-from web_search.models import SearchRequest
-from web_search.providers.errors import (
+from websift.client import WebSearchClient
+from websift.models import SearchRequest
+from websift.providers.errors import (
     ProviderAuthError,
     ProviderConfigError,
     ProviderRateLimitError,
     ProviderUnavailableError,
 )
-from web_search.providers.registry import create_provider
-from web_search.providers.searxng import SearxngProvider, SearxngProviderConfig
-from web_search.settings import AppSettings, ProviderSettings
+from websift.providers.registry import create_provider
+from websift.providers.searxng import SearxngProvider, SearxngProviderConfig
+from websift.settings import AppSettings, ProviderSettings
 
 
 @dataclass
@@ -54,7 +54,7 @@ class _FakeHttp:
             if item.status >= 500:
                 raise ProviderUnavailableError(f"Provider unavailable (HTTP {item.status}).", provider=provider)
             if item.status < 200 or item.status >= 300:
-                from web_search.providers.errors import ProviderResponseError
+                from websift.providers.errors import ProviderResponseError
 
                 raise ProviderResponseError(f"Provider returned HTTP {item.status}.", provider=provider)
             return json.loads(item.body.decode("utf-8")) if item.body else None
@@ -128,7 +128,7 @@ def test_searxng_via_client_settings(monkeypatch: pytest.MonkeyPatch):
     }
 
     # Patch provider construction to inject fake http
-    from web_search.providers import searxng as searxng_mod
+    from websift.providers import searxng as searxng_mod
 
     real_init = searxng_mod.SearxngProvider.__init__
 

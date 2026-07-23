@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from web_search.client import WebSearchClient
-from web_search.models import SearchRequest
-from web_search.providers.brave import BraveProvider, BraveProviderConfig
-from web_search.providers.errors import (
+from websift.client import WebSearchClient
+from websift.models import SearchRequest
+from websift.providers.brave import BraveProvider, BraveProviderConfig
+from websift.providers.errors import (
     ProviderAuthError,
     ProviderConfigError,
     ProviderRateLimitError,
 )
-from web_search.providers.registry import create_provider
-from web_search.settings import AppSettings, ProviderSettings
+from websift.providers.registry import create_provider
+from websift.settings import AppSettings, ProviderSettings
 
 
 class _FakeHttp:
@@ -99,7 +99,7 @@ def test_brave_via_client_settings(monkeypatch: pytest.MonkeyPatch):
             ]
         }
     }
-    from web_search.providers import brave as brave_mod
+    from websift.providers import brave as brave_mod
 
     real_init = brave_mod.BraveProvider.__init__
 
@@ -135,7 +135,7 @@ def test_settings_require_brave_api_key():
 
 
 def test_brave_secret_not_in_public_headers():
-    from web_search.provider_http import ProviderHttpClient, ProviderHttpConfig
+    from websift.provider_http import ProviderHttpClient, ProviderHttpConfig
 
     client = ProviderHttpClient(
         ProviderHttpConfig(

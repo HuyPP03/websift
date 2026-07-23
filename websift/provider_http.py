@@ -134,14 +134,14 @@ class ProviderHttpResponse:
 class ProviderHttpClient:
     """Minimal credential-aware HTTP helper for search providers.
 
-    Intentionally separate from ``web_search.http.fetch_raw`` so API keys never
+    Intentionally separate from ``websift.http.fetch_raw`` so API keys never
     ride on the arbitrary page-fetch path.
     """
 
     def __init__(self, config: ProviderHttpConfig):
         ok, reason, base = validate_provider_base_url(config.base_url, allow_http=config.allow_http)
         if not ok:
-            from web_search.providers.errors import ProviderConfigError
+            from websift.providers.errors import ProviderConfigError
 
             raise ProviderConfigError(reason, code="invalid_base_url")
         self.base_url = base
@@ -166,7 +166,7 @@ class ProviderHttpClient:
         """Join base_url + path + query. Path must be relative (no scheme)."""
         rel = (path or "").strip()
         if rel.startswith("http://") or rel.startswith("https://"):
-            from web_search.providers.errors import ProviderConfigError
+            from websift.providers.errors import ProviderConfigError
 
             raise ProviderConfigError(
                 "Provider request path must be relative to configured base_url.",
@@ -302,7 +302,7 @@ class ProviderHttpClient:
         raise _map_http_exception(last_exc or RuntimeError("request failed"), provider=provider)
 
     def _parse_json_response(self, resp: ProviderHttpResponse, *, provider: str | None) -> Any:
-        from web_search.providers.errors import (
+        from websift.providers.errors import (
             ProviderAuthError,
             ProviderBillingError,
             ProviderRateLimitError,
@@ -381,7 +381,7 @@ class ProviderHttpClient:
             return
         for name, value in page_fetch_headers.items():
             if is_secret_header_name(str(name)):
-                from web_search.providers.errors import ProviderConfigError
+                from websift.providers.errors import ProviderConfigError
 
                 raise ProviderConfigError(
                     f"Refusing to attach secret header {name!r} to page fetch.",
@@ -390,7 +390,7 @@ class ProviderHttpClient:
             # Also refuse values that equal known secret values from this client.
             for secret in self._headers.values():
                 if secret and str(value) == str(secret):
-                    from web_search.providers.errors import ProviderConfigError
+                    from websift.providers.errors import ProviderConfigError
 
                     raise ProviderConfigError(
                         "Refusing to attach provider secret value to page fetch.",
@@ -428,7 +428,7 @@ def _parse_retry_after(headers: Mapping[str, str]) -> float | None:
 
 
 def _is_retryable(mapped: BaseException, original: BaseException) -> bool:
-    from web_search.providers.errors import (
+    from websift.providers.errors import (
         ProviderRateLimitError,
         ProviderTimeoutError,
         ProviderUnavailableError,
@@ -442,7 +442,7 @@ def _is_retryable(mapped: BaseException, original: BaseException) -> bool:
 
 
 def _map_http_exception(exc: BaseException | None, *, provider: str | None) -> Exception:
-    from web_search.providers.errors import (
+    from websift.providers.errors import (
         ProviderTimeoutError,
         ProviderUnavailableError,
         sanitize_provider_message,
@@ -451,7 +451,7 @@ def _map_http_exception(exc: BaseException | None, *, provider: str | None) -> E
     if exc is None:
         return ProviderUnavailableError("Provider request failed.", provider=provider)
     # Already a provider error.
-    from web_search.providers.errors import ProviderError
+    from websift.providers.errors import ProviderError
 
     if isinstance(exc, ProviderError):
         return exc

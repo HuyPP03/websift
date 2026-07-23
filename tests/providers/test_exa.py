@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from web_search.client import WebSearchClient
-from web_search.models import SearchRequest
-from web_search.providers.errors import ProviderAuthError, ProviderConfigError
-from web_search.providers.exa import ExaProvider, ExaProviderConfig
-from web_search.providers.registry import create_provider
-from web_search.settings import AppSettings, ProviderEndpoint, ProviderSettings
+from websift.client import WebSearchClient
+from websift.models import SearchRequest
+from websift.providers.errors import ProviderAuthError, ProviderConfigError
+from websift.providers.exa import ExaProvider, ExaProviderConfig
+from websift.providers.registry import create_provider
+from websift.settings import AppSettings, ProviderEndpoint, ProviderSettings
 
 
 class _FakeHttp:
@@ -75,7 +75,7 @@ def test_exa_auth_error():
 
 def test_exa_via_client_settings(monkeypatch: pytest.MonkeyPatch):
     payload = {"results": [{"title": "Exa Hit", "url": "https://ex.example", "text": "ok"}]}
-    from web_search.providers import exa as exa_mod
+    from websift.providers import exa as exa_mod
 
     real_init = exa_mod.ExaProvider.__init__
 
@@ -137,11 +137,11 @@ def test_exa_fetch_status_failure_falls_back(monkeypatch):
     provider = ExaProvider(ExaProviderConfig(api_key="k"), http=http)
 
     def fake_fetch(*a, **k):
-        from web_search.models import FetchResult
+        from websift.models import FetchResult
 
         return FetchResult.success(a[0], "generic-exa", content_type="text/plain")
 
-    monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+    monkeypatch.setattr("websift.providers.base.fetch_raw", fake_fetch)
     out = provider.fetch("https://example.com/a")
     assert out.content == "generic-exa"
 

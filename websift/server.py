@@ -12,11 +12,11 @@ from dataclasses import dataclass
 
 from mcp.server.fastmcp import FastMCP
 
-from web_search.auth import install_http_guards, mcp_auth_kwargs
-from web_search.client import WebSearchClient
-from web_search.concurrency import WorkLimits
-from web_search.logging_config import configure_logging, log_fetch, log_search
-from web_search.settings import AppSettings
+from websift.auth import install_http_guards, mcp_auth_kwargs
+from websift.client import WebSearchClient
+from websift.concurrency import WorkLimits
+from websift.logging_config import configure_logging, log_fetch, log_search
+from websift.settings import AppSettings
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "0:0:0:0:0:0:0:1"})
 
@@ -97,7 +97,7 @@ def create_server(
 
     auth_kwargs = mcp_auth_kwargs(settings)
     mcp = FastMCP(
-        "web-search",
+        "websift",
         host=settings.server.host,
         port=settings.server.port,
         **auth_kwargs,

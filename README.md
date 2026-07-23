@@ -1,5 +1,3 @@
- 
-
 # websift
 
 A lightweight, **free, self-hosted MCP (Model Context Protocol) server** that gives AI agents real-time web access — DuckDuckGo search + web page fetching (HTML → Markdown, PDF → text) — with built-in SSRF protection and DNS pinning. **No API key required.**
@@ -23,6 +21,7 @@ A lightweight, **free, self-hosted MCP (Model Context Protocol) server** that gi
   - [Option 3: Docker (Manual)](#option-3-docker-manual)
   - [Option 4: Local Python (No Docker)](#option-4-local-python-no-docker)
 - [Usage](#usage)
+  - [CLI](#cli)
   - [As a Python Library (Direct Import)](#as-a-python-library-direct-import)
   - [As an MCP Server (For AI Clients)](#as-an-mcp-server-for-ai-clients)
 - [Tools](#tools)
@@ -81,27 +80,27 @@ That's it — simple, focused, and reliable.
 
 ## Comparison with Alternatives
 
-| Feature                    | **websift** | Tavily MCP                  | Firecrawl MCP         | Exa MCP               | Brave Search MCP            |
-| -------------------------- | ------------------------ | --------------------------- | --------------------- | --------------------- | --------------------------- |
-| **Price**            | ✅ Free                  | 💰 Paid (free tier limited) | 💰 Paid               | 💰 Paid               | 💰 Paid (free tier limited) |
-| **API Key Required** | ✅ No                    | ❌ Yes                      | ❌ Yes                | ❌ Yes                | ❌ Yes                      |
-| **Self-Hosted**      | ✅ Yes                   | ❌ No                       | ⚠️ Partial          | ❌ No                 | ❌ No                       |
-| **Web Search**       | ✅ DuckDuckGo            | ✅ Proprietary              | ❌ (scrape only)      | ✅ Proprietary        | ✅ Brave                    |
-| **Web Fetch**        | ✅ HTML + PDF            | ✅ Yes                      | ✅ Yes (deep)         | ✅ Yes                | ❌ No                       |
-| **SSRF Protection**  | ✅ Built-in              | ⚠️ Managed                | ⚠️ Managed          | ⚠️ Managed          | ⚠️ Managed                |
-| **Container Size**   | ~150 MB                  | N/A (SaaS)                  | ~500 MB+              | N/A (SaaS)            | N/A (SaaS)                  |
-| **Dependencies**     | 4 packages               | N/A                         | Many                  | N/A                   | N/A                         |
-| **Rate Limits**      | Upstream DDGS / sites    | Provider limits             | Provider limits       | Provider limits       | Provider limits             |
-| **Privacy**          | Self-hosted + outbound   | ⚠️ Data to provider       | ⚠️ Data to provider | ⚠️ Data to provider | ⚠️ Data to provider       |
+| Feature                    | **websift**      | Tavily MCP                  | Firecrawl MCP         | Exa MCP               | Brave Search MCP            |
+| -------------------------- | ---------------------- | --------------------------- | --------------------- | --------------------- | --------------------------- |
+| **Price**            | ✅ Free                | 💰 Paid (free tier limited) | 💰 Paid               | 💰 Paid               | 💰 Paid (free tier limited) |
+| **API Key Required** | ✅ No                  | ❌ Yes                      | ❌ Yes                | ❌ Yes                | ❌ Yes                      |
+| **Self-Hosted**      | ✅ Yes                 | ❌ No                       | ⚠️ Partial          | ❌ No                 | ❌ No                       |
+| **Web Search**       | ✅ DuckDuckGo          | ✅ Proprietary              | ❌ (scrape only)      | ✅ Proprietary        | ✅ Brave                    |
+| **Web Fetch**        | ✅ HTML + PDF          | ✅ Yes                      | ✅ Yes (deep)         | ✅ Yes                | ❌ No                       |
+| **SSRF Protection**  | ✅ Built-in            | ⚠️ Managed                | ⚠️ Managed          | ⚠️ Managed          | ⚠️ Managed                |
+| **Container Size**   | ~150 MB                | N/A (SaaS)                  | ~500 MB+              | N/A (SaaS)            | N/A (SaaS)                  |
+| **Dependencies**     | 4 packages             | N/A                         | Many                  | N/A                   | N/A                         |
+| **Rate Limits**      | Upstream DDGS / sites  | Provider limits             | Provider limits       | Provider limits       | Provider limits             |
+| **Privacy**          | Self-hosted + outbound | ⚠️ Data to provider       | ⚠️ Data to provider | ⚠️ Data to provider | ⚠️ Data to provider       |
 
 ### When to Choose What
 
-| Scenario                                                               | Recommended                 |
-| ---------------------------------------------------------------------- | --------------------------- |
+| Scenario                                                               | Recommended          |
+| ---------------------------------------------------------------------- | -------------------- |
 | You want**free, no-signup** web access for AI                    | **websift** ✅ |
-| You need**deep scraping** (JS-rendered pages, sitemaps)          | Firecrawl                   |
-| You need**semantic search** (AI-powered relevance)               | Exa                         |
-| You want**agentic-optimized** search (Tavily's `extract` mode) | Tavily                      |
+| You need**deep scraping** (JS-rendered pages, sitemaps)          | Firecrawl            |
+| You need**semantic search** (AI-powered relevance)               | Exa                  |
+| You want**agentic-optimized** search (Tavily's `extract` mode) | Tavily               |
 | You want**self-hosted** control (still outbound search/fetch)    | **websift** ✅ |
 | You're building a**custom AI agent** with minimal infra          | **websift** ✅ |
 
@@ -133,8 +132,10 @@ Outbound data flow: **search** → configured provider (default DuckDuckGo via `
 ### Module Structure
 
 ```
-web_search/
-├── __init__.py       # WebSearchClient + __version__ (single version source)
+websift/
+├── __init__.py       # WebSearchClient, AppSettings, __version__
+├── __main__.py       # python -m websift
+├── cli.py            # argparse CLI (serve / search / fetch)
 ├── settings.py       # AppSettings.from_env() — no env read on import
 ├── concurrency.py    # WorkLimits (search/fetch/PDF bounds)
 ├── models.py         # SearchResponse / FetchResult internals
@@ -145,9 +146,9 @@ web_search/
 ├── html.py           # HTML → Markdown, main content, truncation
 ├── client.py         # public search/fetch façade
 ├── provider_http.py  # credentialed provider transport (isolated from page fetch)
-├── providers/        # SearchProvider contract, registry, DDGS adapter
-└── server.py         # create_server / ServerApp / main()
-server.py             # thin entry → web_search.server:main
+├── providers/        # SearchProvider contract, registry, DDGS + others
+└── server.py         # create_server / ServerApp
+server.py             # thin entry → websift.cli:main
 ```
 
 ---
@@ -202,25 +203,58 @@ pip install -r requirements.txt
 pip install -e .
 
 # Run the server (console entry or module)
-websift
-# python -m web_search.server
-# python server.py
+websift serve
+# websift                 # same as serve when no command is given
+# python -m websift serve
+# python server.py serve
 ```
 
 ---
 
 ## Usage
 
+### CLI
+
+After `pip install websift`, the `websift` command supports help, version, and subcommands:
+
+```bash
+websift --help
+websift --version
+
+# Start MCP server (default when no command is given)
+websift
+websift serve
+websift serve --host 0.0.0.0 --port 9000 --transport streamable-http
+websift serve --auth-mode bearer --bearer-token 'a-long-random-secret'
+websift serve --provider ddgs --max-results 8 --log-level DEBUG
+
+# One-shot library-style commands (no MCP server)
+websift search "Python 3.12 features"
+websift search "asyncio tutorial" -n 10 --provider ddgs
+websift fetch https://docs.python.org/3/
+websift fetch https://example.com/doc.pdf --max-chars 20000
+```
+
+| Command                         | Purpose                        |
+| ------------------------------- | ------------------------------ |
+| `websift` / `websift serve` | Run the MCP server             |
+| `websift search QUERY`        | Print search results to stdout |
+| `websift fetch URL`           | Print page/PDF text to stdout  |
+| `websift --version` / `-V`  | Print package version          |
+| `websift --help` / `-h`     | Show help                      |
+
+CLI flags override the corresponding environment variables for that process. Full env matrix is under [Configuration](#configuration).
+
 ### As a Python Library (Direct Import)
 
 Use `WebSearchClient` directly in your Python code — **no server needed**:
 
 ```python
-from web_search import WebSearchClient
+from websift import WebSearchClient
 
 client = WebSearchClient()
 
-# Search the web (DuckDuckGo)
+# Search the web (DuckDuckGo by default)
 results = client.search("Python 3.12 features")
 print(results)
 
@@ -228,6 +262,71 @@ print(results)
 content = client.fetch("https://docs.python.org/3/")
 print(content)
 ```
+
+#### Customizing `WebSearchClient`
+
+Pass constructor kwargs — no need to edit env vars for library use:
+
+```python
+from websift import WebSearchClient, AppSettings
+from websift.settings import ProviderSettings, ExtractionSettings, FetchSettings
+
+# Simple tuning
+client = WebSearchClient(
+    max_results=10,
+    timeout=20,              # shared search+fetch timeout (legacy)
+    max_page_chars=50_000,
+)
+
+# Separate timeouts + provider name + extraction flags
+client = WebSearchClient(
+    max_results=8,
+    search_timeout=15,
+    fetch_timeout=45,
+    max_page_chars=64_000,
+    provider="ddgs",           # or "brave" / "tavily" / "exa" / "searxng"
+    include_links=True,
+    include_images=False,
+    output_format="markdown",  # or "text"
+    native_fetch=True,         # Tavily/Exa paid extract when keyed
+)
+
+# Keyed provider (API key stays in your process — never accepted via MCP tools)
+client = WebSearchClient(
+    provider="brave",
+    api_key="BSA...",
+    # base_url="https://api.search.brave.com",  # optional override
+    fallback_providers=["ddgs"],
+    max_results=5,
+)
+
+# Full settings tree (also: AppSettings.from_env())
+settings = AppSettings(
+    provider=ProviderSettings(name="ddgs", max_results=10, timeout_seconds=20),
+    fetch=FetchSettings(timeout_seconds=45),
+    extraction=ExtractionSettings(max_page_chars=50_000, include_links=True),
+)
+client = WebSearchClient(settings=settings)
+
+# Or load env, then use as-is
+client = WebSearchClient(settings=AppSettings.from_env())
+```
+
+| Kwarg                                         | Type                          | Description                                                                     |
+| --------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------- |
+| `max_results`                               | `int`                       | Max search hits (default`5`)                                                  |
+| `timeout`                                   | `int`                       | Shared search+fetch timeout seconds when separate timeouts omit (default`30`) |
+| `search_timeout`                            | `float`                     | Search-only timeout                                                             |
+| `fetch_timeout`                             | `float`                     | Fetch-only timeout                                                              |
+| `max_page_chars`                            | `int`                       | Max characters returned from fetch                                              |
+| `provider`                                  | `str` or `SearchProvider` | Provider name (`ddgs`, `brave`, …) or instance                             |
+| `api_key` / `base_url`                    | `str`                       | Credentials/endpoint for keyed or self-hosted providers                         |
+| `fallback_providers`                        | sequence of`str`            | Opt-in fallback chain after primary                                             |
+| `safe_search` / `region` / `time_range` | `str`                       | Optional search filters                                                         |
+| `include_links` / `include_images`        | `bool`                      | HTML extraction options                                                         |
+| `output_format`                             | `str`                       | `markdown` or `text`                                                        |
+| `native_fetch`                              | `bool`                      | Allow Tavily/Exa native extract for fetch                                       |
+| `settings`                                  | `AppSettings`               | Full config tree (advanced kwargs still overlay when set)                       |
 
 **Perfect for:**
 
@@ -241,18 +340,24 @@ print(content)
 Run the server to expose tools to any MCP-compatible AI client:
 
 ```bash
-# Start the server (default: port 8787)
-websift
+# Start the server (default: 127.0.0.1:8787, streamable-http)
+websift serve
 
-# Custom port & transport
-MCP_PORT=9000 MCP_TRANSPORT=sse websift
+# Custom bind / transport via CLI (overrides env for this process)
+websift serve --host 0.0.0.0 --port 9000 --transport sse
+
+# Or via environment variables
+MCP_PORT=9000 MCP_TRANSPORT=sse websift serve
 ```
 
 Or via Python:
 
 ```python
-from web_search.server import main
-main()
+from websift.server import create_server
+from websift.settings import AppSettings
+
+create_server(AppSettings.from_env()).run()
+# or: from websift.cli import main; main(["serve"])
 ```
 
 **Perfect for:**
@@ -313,36 +418,36 @@ The Python programming language...
 
 ### Environment Variables
 
-| Variable                   | Default             | Description                                                          |
-| -------------------------- | ------------------- | -------------------------------------------------------------------- |
-| `MCP_HOST`               | `127.0.0.1`       | Bind address (use `0.0.0.0` only when intentionally exposing)      |
-| `MCP_PORT`               | `8787`            | Listen port                                                          |
-| `MCP_TRANSPORT`          | `streamable-http` | Transport: `streamable-http`, `sse`, or `stdio`                  |
-| `MCP_AUTH_MODE`          | `none`            | `none` or `bearer` (HTTP/SSE only)                               |
-| `MCP_BEARER_TOKEN`       | (empty)             | Shared secret when `MCP_AUTH_MODE=bearer`                          |
-| `SEARCH_PROVIDER`        | `ddgs`            | Server-wide search provider (**allowlisted**; not settable per tool call) |
-| `SEARCH_MAX_RESULTS`     | `5`               | Max search results returned                                          |
-| `SEARCH_TIMEOUT_SECONDS` | `30`              | Search timeout (seconds)                                             |
-| `PROVIDER_NATIVE_FETCH`   | `true`            | Tavily/Exa may use paid extract/contents for `web_fetch`               |
-| `FETCH_TIMEOUT_SECONDS`  | `30`              | Page fetch timeout (seconds)                                         |
-| `SEARCH_TIMEOUT`         | (alias)             | **Deprecated**: if set and specific timeouts omit, maps to both |
-| `SEARCH_FALLBACK_PROVIDERS` | (empty)          | Comma-separated allowlisted fallbacks after primary (no config/auth fallback) |
-| `PAGE_MAX_CHARS`         | `32000`           | Max characters returned from fetch                                   |
-| `SEARCH_MAX_CONCURRENCY` | `8`               | Max concurrent search operations                                     |
-| `FETCH_MAX_CONCURRENCY`  | `16`              | Max concurrent page fetches                                          |
-| `PDF_MAX_CONCURRENCY`    | `2`               | Max concurrent PDF parses                                            |
+| Variable                      | Default             | Description                                                                     |
+| ----------------------------- | ------------------- | ------------------------------------------------------------------------------- |
+| `MCP_HOST`                  | `127.0.0.1`       | Bind address (use`0.0.0.0` only when intentionally exposing)                  |
+| `MCP_PORT`                  | `8787`            | Listen port                                                                     |
+| `MCP_TRANSPORT`             | `streamable-http` | Transport:`streamable-http`, `sse`, or `stdio`                            |
+| `MCP_AUTH_MODE`             | `none`            | `none` or `bearer` (HTTP/SSE only)                                          |
+| `MCP_BEARER_TOKEN`          | (empty)             | Shared secret when`MCP_AUTH_MODE=bearer`                                      |
+| `SEARCH_PROVIDER`           | `ddgs`            | Server-wide search provider (**allowlisted**; not settable per tool call) |
+| `SEARCH_MAX_RESULTS`        | `5`               | Max search results returned                                                     |
+| `SEARCH_TIMEOUT_SECONDS`    | `30`              | Search timeout (seconds)                                                        |
+| `PROVIDER_NATIVE_FETCH`     | `true`            | Tavily/Exa may use paid extract/contents for`web_fetch`                       |
+| `FETCH_TIMEOUT_SECONDS`     | `30`              | Page fetch timeout (seconds)                                                    |
+| `SEARCH_TIMEOUT`            | (alias)             | **Deprecated**: if set and specific timeouts omit, maps to both           |
+| `SEARCH_FALLBACK_PROVIDERS` | (empty)             | Comma-separated allowlisted fallbacks after primary (no config/auth fallback)   |
+| `PAGE_MAX_CHARS`            | `128000`          | Max characters returned from fetch                                              |
+| `SEARCH_MAX_CONCURRENCY`    | `8`               | Max concurrent search operations                                                |
+| `FETCH_MAX_CONCURRENCY`     | `16`              | Max concurrent page fetches                                                     |
+| `PDF_MAX_CONCURRENCY`       | `2`               | Max concurrent PDF parses                                                       |
 
 ### Search providers
 
 Server-wide only (`SEARCH_PROVIDER`). MCP tools never accept provider name, base URL, or API keys.
 
-| Provider | Extra | Credentials / endpoint | Notes |
-| -------- | ----- | ---------------------- | ----- |
-| **ddgs** (default) | base install | none | DuckDuckGo via `ddgs` package |
-| **searxng** | `websift[searxng]` (marker; no extra deps today) | `SEARXNG_BASE_URL` (required), optional `SEARXNG_API_KEY` | Self-hosted; set `PROVIDER_ALLOW_HTTP=true` only for local `http://` instances |
-| **brave** | `websift[brave]` | `BRAVE_API_KEY` (required), optional `BRAVE_BASE_URL` | Official Web Search API |
-| **tavily** | `websift[tavily]` | `TAVILY_API_KEY` (required), optional `TAVILY_BASE_URL` | |
-| **exa** | `websift[exa]` | `EXA_API_KEY` (required), optional `EXA_BASE_URL` | |
+| Provider                 | Extra                                              | Credentials / endpoint                                        | Notes                                                                             |
+| ------------------------ | -------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| **ddgs** (default) | base install                                       | none                                                          | DuckDuckGo via`ddgs` package                                                    |
+| **searxng**        | `websift[searxng]` (marker; no extra deps today) | `SEARXNG_BASE_URL` (required), optional `SEARXNG_API_KEY` | Self-hosted; set`PROVIDER_ALLOW_HTTP=true` only for local `http://` instances |
+| **brave**          | `websift[brave]`                                 | `BRAVE_API_KEY` (required), optional `BRAVE_BASE_URL`     | Official Web Search API                                                           |
+| **tavily**         | `websift[tavily]`                                | `TAVILY_API_KEY` (required), optional `TAVILY_BASE_URL`   |                                                                                   |
+| **exa**            | `websift[exa]`                                   | `EXA_API_KEY` (required), optional `EXA_BASE_URL`         |                                                                                   |
 
 Convenience: `pip install 'websift[providers]'` (all keyed/self-hosted HTTP providers — currently no extra wheels beyond the base package; adapters use stdlib HTTP).
 
@@ -359,12 +464,12 @@ export SEARCH_FALLBACK_PROVIDERS=ddgs
 
 ### Internal Limits
 
-| Setting          | Value  | Description               |
-| ---------------- | ------ | ------------------------- |
-| Max page size    | 2 MB   | Normal page fetch limit   |
-| Max PDF size     | 20 MB  | PDF fetch limit           |
-| Max output chars | 32,000 | Characters sent to LLM    |
-| Max redirects    | 5      | HTTP redirect chain limit |
+| Setting          | Value   | Description               |
+| ---------------- | ------- | ------------------------- |
+| Max page size    | 4 MB    | Normal page fetch limit   |
+| Max PDF size     | 20 MB   | PDF fetch limit           |
+| Max output chars | 128,000 | Characters sent to LLM    |
+| Max redirects    | 5       | HTTP redirect chain limit |
 
 ---
 
@@ -543,7 +648,7 @@ For any MCP-compatible client, the server is accessible at:
 
 - **Streamable HTTP** (recommended): `http://localhost:8787/mcp`
 - **SSE**: `http://localhost:8787/mcp/sse` (set `MCP_TRANSPORT=sse`)
-- **STDIO**: Run `python server.py` with `MCP_TRANSPORT=stdio`
+- **STDIO**: Run `websift serve --transport stdio` (or `MCP_TRANSPORT=stdio websift serve`)
 
 Generic HTTP configuration:
 
@@ -613,16 +718,16 @@ This server is particularly well-suited for agentic AI because:
 
 ### Built-in Protections
 
-| Protection                  | How It Works                                                                                          |
-| --------------------------- | ----------------------------------------------------------------------------------------------------- |
-| **SSRF Prevention**   | **Every** DNS answer must be a global unicast IP; private/loopback/link-local/special-use rejected |
-| **No URL userinfo**   | Credentials in the authority (`user:pass@host`) are rejected                                        |
-| **DNS Pinning + SNI** | Connect to a validated pinned IP; TLS SNI/hostname still match the requested host                     |
-| **Redirect re-check** | Each redirect re-runs URL + multi-answer DNS validation (max 5 hops)                                  |
-| **Binary Detection**  | Images, executables, archives, and other binary content are blocked                                   |
-| **Size Limits**       | Body/decompress caps; 2 MB normal pages, 20 MB PDFs, 32,000 chars default output                      |
-| **Charset order**     | BOM → HTTP `Content-Type` → HTML meta → UTF-8                                                       |
-| **Credential boundary** | Provider secrets stay in provider HTTP; page fetch never inherits them                              |
+| Protection                    | How It Works                                                                                             |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **SSRF Prevention**     | **Every** DNS answer must be a global unicast IP; private/loopback/link-local/special-use rejected |
+| **No URL userinfo**     | Credentials in the authority (`user:pass@host`) are rejected                                           |
+| **DNS Pinning + SNI**   | Connect to a validated pinned IP; TLS SNI/hostname still match the requested host                        |
+| **Redirect re-check**   | Each redirect re-runs URL + multi-answer DNS validation (max 5 hops)                                     |
+| **Binary Detection**    | Images, executables, archives, and other binary content are blocked                                      |
+| **Size Limits**         | Body/decompress caps; 4 MB normal pages, 20 MB PDFs, 128,000 chars default output                        |
+| **Charset order**       | BOM → HTTP`Content-Type` → HTML meta → UTF-8                                                        |
+| **Credential boundary** | Provider secrets stay in provider HTTP; page fetch never inherits them                                   |
 
 ### Network Considerations
 
@@ -644,15 +749,17 @@ websift/
 ├── docker-compose.yml      # Docker Compose setup
 ├── Dockerfile              # Python 3.12-slim container
 ├── requirements.txt        # Runtime deps mirror (prefer pyproject.toml)
-├── server.py               # Thin entry → web_search.server:main
+├── server.py               # Thin entry → websift.cli:main
 ├── .env.example            # Environment variable template
 ├── .github/workflows/      # Build/test matrix + PyPI publish gate
 ├── README.md               # This file
 ├── docs/
 │   └── README.vi.md        # Vietnamese documentation
 ├── tests/                  # Offline pytest suite (markers: live, provider)
-└── web_search/
-    ├── __init__.py         # WebSearchClient, __version__
+└── websift/
+    ├── __init__.py         # WebSearchClient, AppSettings, __version__
+    ├── __main__.py         # python -m websift
+    ├── cli.py              # argparse CLI
     ├── settings.py         # Typed AppSettings
     ├── auth.py             # Bearer token + body limit guards
     ├── concurrency.py      # WorkLimits
@@ -665,16 +772,16 @@ websift/
     ├── client.py           # Public façade
     ├── provider_http.py    # Provider credential transport
     ├── providers/          # DDGS + registry
-    └── server.py           # create_server / main
+    └── server.py           # create_server / ServerApp
 ```
 
 ### Naming
 
-| Surface | Name |
-| ------- | ---- |
-| PyPI / CLI / Docker brand | `websift` |
-| Import path | `web_search` |
-| Version source | `web_search.__version__` (dynamic in `pyproject.toml`) |
+| Surface                      | Name                                                    |
+| ---------------------------- | ------------------------------------------------------- |
+| PyPI / CLI / Docker / import | `websift`                                             |
+| MCP tools (stable)           | `web_search`, `web_fetch`                           |
+| Version source               | `websift.__version__` (dynamic in `pyproject.toml`) |
 
 ### Running Locally
 
@@ -685,25 +792,33 @@ pip install websift
 # Or editable + dev tools
 pip install -e ".[dev]"
 
-# Run as MCP server
-websift
+# CLI help / version
+websift --help
+websift --version
 
-# Custom settings
-MCP_PORT=9000 MCP_TRANSPORT=sse websift
+# Run as MCP server
+websift serve
+
+# Custom settings via CLI flags (or env)
+websift serve --port 9000 --transport sse
+
+# One-shot search / fetch
+websift search "test"
+websift fetch https://example.com
 
 # Library (no server)
-python -c "from web_search import WebSearchClient; print(WebSearchClient().search('test'))"
+python -c "from websift import WebSearchClient; print(WebSearchClient().search('test'))"
 ```
 
 ### Lint, test, build
 
 ```bash
 # Lint
-ruff check web_search tests
-ruff format --check web_search tests
+ruff check websift tests
+ruff format --check websift tests
 
 # Offline tests + coverage gate (≥85%)
-python -m pytest --cov=web_search --cov-report=term-missing --cov-fail-under=85 -m "not live and not provider"
+python -m pytest --cov=websift --cov-report=term-missing --cov-fail-under=85 -m "not live and not provider"
 
 # Package
 python -m build
@@ -760,27 +875,29 @@ export MCP_BEARER_TOKEN='a-long-random-secret'
 Clients must send `Authorization: Bearer <token>`. Missing/invalid tokens get **401** without echoing the secret. STDIO ignores bearer (process-local trust). You can still put a reverse proxy in front (nginx basic auth, mTLS, etc.) and leave `MCP_AUTH_MODE=none`.
 
 Optional body cap: `MCP_MAX_REQUEST_BODY_BYTES=1048576`.
+
 ### Q: What transport protocols are supported?
 
 - **streamable-http** (recommended, default) — modern MCP standard
 - **sse** — legacy Server-Sent Events (still supported)
 - **stdio** — for local process communication
 
-### Q: Why is the output limited to 32,000 characters?
+### Q: Why is the output limited to 128,000 characters?
 
-This keeps responses within typical LLM context windows while providing substantial content. You can adjust `MAX_PAGE_CHARS` in `web_search/config.py` if needed.
+This keeps responses within typical LLM context windows while providing substantial content. You can lower or raise it via `PAGE_MAX_CHARS`, `WebSearchClient(max_page_chars=...)`, or `MAX_PAGE_CHARS` in `websift/config.py`.
 
 ### Q: Can I use this for internal/private websites?
 
-By default, SSRF protection blocks private IP ranges. To allow internal sites, modify `web_search/security.py` to whitelist specific domains or IP ranges.
+By default, SSRF protection blocks private IP ranges. To allow internal sites, modify `websift/security.py` to whitelist specific domains or IP ranges.
 
 ### Q: Can I use this as a Python library (without MCP)?
 
 **Yes!** Just `pip install websift` and import directly:
 
 ```python
-from web_search import WebSearchClient
-client = WebSearchClient()
+from websift import WebSearchClient
+
+client = WebSearchClient(max_results=10, search_timeout=20, fetch_timeout=45)
 client.search("your query")
 client.fetch("https://example.com")
 ```

@@ -16,7 +16,7 @@ from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings as McpAuthSettings
 from pydantic import AnyHttpUrl
 
-from web_search.settings import AppSettings, AuthSettings
+from websift.settings import AppSettings, AuthSettings
 
 # Synthetic OAuth resource identity for static shared-secret bearer mode.
 # MCP SDK requires issuer/resource URLs when auth middleware is enabled; they

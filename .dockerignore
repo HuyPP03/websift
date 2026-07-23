@@ -1,5 +1,5 @@
 # Docker build context exclusions. Keep packaging inputs (pyproject, README,
-# LICENSE, web_search/, server.py) available for the multi-stage wheel build.
+# LICENSE, websift/, server.py) available for the multi-stage wheel build.
 
 .git
 .github

@@ -36,15 +36,15 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Ruff check
-        run: ruff check web_search tests
+        run: ruff check websift tests
 
       - name: Ruff format check
-        run: ruff format --check web_search tests
+        run: ruff format --check websift tests
 
       - name: Pytest (offline suite + coverage)
         run: |
           python -m pytest \
-            --cov=web_search \
+            --cov=websift \
             --cov-report=term-missing \
             --cov-fail-under=85 \
             -m "not live and not provider"
@@ -85,14 +85,15 @@ jobs:
           /tmp/websift-smoke/bin/pip install dist/websift-*.whl
           /tmp/websift-smoke/bin/python - <<'PY'
           import os
-          import web_search
+          import websift
           from importlib.metadata import entry_points, version
-          from web_search import WebSearchClient
-          from web_search.server import create_server, main
-          from web_search.settings import AppSettings, ServerSettings
+          from websift import WebSearchClient
+          from websift.cli import main
+          from websift.server import create_server
+          from websift.settings import AppSettings, ServerSettings
 
-          assert web_search.__version__ == version("websift"), (
-              web_search.__version__,
+          assert websift.__version__ == version("websift"), (
+              websift.__version__,
               version("websift"),
           )
           client = WebSearchClient()
@@ -108,16 +109,22 @@ jobs:
           assert callable(app.web_search)
           assert callable(app.web_fetch)
 
-          # Console entry points to main — do NOT execute main()/websift (starts server).
+          # Console entry points to CLI — do NOT execute bare main() (starts server).
           eps = entry_points()
           scripts = eps.select(group="console_scripts") if hasattr(eps, "select") else eps.get("console_scripts", [])
           websift_eps = [e for e in scripts if e.name == "websift"]
           assert websift_eps, "console_scripts entry 'websift' missing"
-          assert websift_eps[0].value == "web_search.server:main"
+          assert websift_eps[0].value == "websift.cli:main"
           assert callable(main)
           assert os.path.isfile("/tmp/websift-smoke/bin/websift")
           assert os.access("/tmp/websift-smoke/bin/websift", os.X_OK)
-          print("smoke ok", web_search.__version__, "entry", websift_eps[0].value)
+          # --help / --version must not start the server.
+          import subprocess
+          h = subprocess.run(["/tmp/websift-smoke/bin/websift", "--help"], capture_output=True, text=True, check=True)
+          assert "serve" in h.stdout
+          v = subprocess.run(["/tmp/websift-smoke/bin/websift", "--version"], capture_output=True, text=True, check=True)
+          assert websift.__version__ in v.stdout
+          print("smoke ok", websift.__version__, "entry", websift_eps[0].value)
           PY
 
       - name: Smoke optional provider extras
@@ -131,8 +138,8 @@ jobs:
             "/tmp/websift-extra-${extra}/bin/pip" install --upgrade pip
             "/tmp/websift-extra-${extra}/bin/pip" install "${WHL}[${extra}]"
             "/tmp/websift-extra-${extra}/bin/python" - <<'PY'
-          from web_search.providers.registry import list_providers, is_registered
-          from web_search.providers import brave, ddgs, exa, searxng, tavily
+          from websift.providers.registry import list_providers, is_registered
+          from websift.providers import brave, ddgs, exa, searxng, tavily
 
           names = set(list_providers())
           for n in ("ddgs", "searxng", "brave", "tavily", "exa"):
@@ -193,7 +200,7 @@ jobs:
           user=$(docker exec websift-ci whoami)
           test "$uid" = "10001"
           test "$user" = "websift"
-          docker exec websift-ci python -c "import web_search; print(web_search.__version__)"
+          docker exec websift-ci python -c "import websift; print(websift.__version__)"
           docker exec websift-ci which websift
 
       - name: Image must not embed common secret env values

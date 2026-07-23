@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from web_search.providers.ddgs import DdgsProvider, DdgsProviderConfig
-from web_search.providers.errors import ProviderConfigError
-from web_search.providers.registry import (
+from websift.providers.ddgs import DdgsProvider, DdgsProviderConfig
+from websift.providers.errors import ProviderConfigError
+from websift.providers.registry import (
     create_provider,
     get_default_provider,
     is_registered,

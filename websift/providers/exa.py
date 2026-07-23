@@ -1,4 +1,4 @@
-"""Tavily Search provider — API key required (Authorization Bearer)."""
+"""Exa Search provider — API key required (x-api-key)."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
-from web_search.models import ErrorCategory, FetchResult, SearchRequest, SearchResult
-from web_search.provider_http import ProviderHttpClient, ProviderHttpConfig
-from web_search.providers.base import BaseProvider, FetchContext, ProviderCapabilities, validate_request_capabilities
-from web_search.providers.errors import (
+from websift.models import ErrorCategory, FetchResult, SearchRequest, SearchResult
+from websift.provider_http import ProviderHttpClient, ProviderHttpConfig
+from websift.providers.base import BaseProvider, FetchContext, ProviderCapabilities, validate_request_capabilities
+from websift.providers.errors import (
     ProviderAuthError,
     ProviderBillingError,
     ProviderConfigError,
@@ -19,13 +19,13 @@ from web_search.providers.errors import (
     sanitize_provider_message,
 )
 
-_DEFAULT_TAVILY_BASE = "https://api.tavily.com"
+_DEFAULT_EXA_BASE = "https://api.exa.ai"
 
 
 @dataclass(frozen=True)
-class TavilyProviderConfig:
+class ExaProviderConfig:
     api_key: str
-    base_url: str = _DEFAULT_TAVILY_BASE
+    base_url: str = _DEFAULT_EXA_BASE
     timeout: float = 30.0
     allow_http: bool = False
     allow_unsupported_filters: bool = False
@@ -33,21 +33,21 @@ class TavilyProviderConfig:
     retry_backoff_seconds: float = 0.5
 
 
-class TavilyProvider(BaseProvider):
-    """Tavily Search API (`POST /search`) + optional exact-URL extract (`POST /extract`)."""
+class ExaProvider(BaseProvider):
+    """Exa Search API (`POST /search`) + optional exact-URL contents (`POST /contents`)."""
 
-    name = "tavily"
+    name = "exa"
     capabilities = ProviderCapabilities(
-        safe_search=True,
-        region=True,
-        time_range=True,
+        safe_search=False,
+        region=False,
+        time_range=False,
         pagination=False,
         domain_filter=False,
     )
 
     def __init__(
         self,
-        config: TavilyProviderConfig | None = None,
+        config: ExaProviderConfig | None = None,
         *,
         http: ProviderHttpClient | None = None,
         fetch_context: FetchContext | None = None,
@@ -55,10 +55,10 @@ class TavilyProvider(BaseProvider):
     ):
         super().__init__(fetch_context=fetch_context, pdf_semaphore=pdf_semaphore)
         if config is None:
-            raise ProviderConfigError("Tavily API key is required.", code="missing_api_key", provider="tavily")
+            raise ProviderConfigError("Exa API key is required.", code="missing_api_key", provider="exa")
         key = (config.api_key or "").strip()
         if not key and http is None:
-            raise ProviderConfigError("Tavily API key is required.", code="missing_api_key", provider=self.name)
+            raise ProviderConfigError("Exa API key is required.", code="missing_api_key", provider=self.name)
         self.config = config
         if http is not None:
             self._http = http
@@ -66,11 +66,11 @@ class TavilyProvider(BaseProvider):
             headers = {
                 "Accept": "application/json",
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {key}",
+                "x-api-key": key,
             }
             self._http = ProviderHttpClient(
                 ProviderHttpConfig(
-                    base_url=config.base_url or _DEFAULT_TAVILY_BASE,
+                    base_url=config.base_url or _DEFAULT_EXA_BASE,
                     timeout=config.timeout,
                     headers=headers,
                     allow_http=config.allow_http,
@@ -85,22 +85,13 @@ class TavilyProvider(BaseProvider):
             self.capabilities,
             allow_unsupported=self.config.allow_unsupported_filters,
         )
-        count = max(1, min(int(request.max_results or 5), 20))
+        count = max(1, min(int(request.max_results or 5), 100))
         body: dict[str, object] = {
             "query": request.query,
-            "max_results": count,
-            "include_answer": False,
-            "include_raw_content": False,
-            "include_images": False,
+            "numResults": count,
+            "type": "auto",
+            "contents": {"text": {"maxCharacters": 1000}},
         }
-        safe = _map_tavily_safe_search(request.safe_search)
-        if safe is not None:
-            body["safe_search"] = safe
-        if request.region:
-            body["country"] = request.region
-        time_range = _map_tavily_time_range(request.time_range)
-        if time_range is not None:
-            body["time_range"] = time_range
 
         payload = self._http.post_json("/search", json_body=body, provider=self.name)
         if payload is None:
@@ -118,7 +109,9 @@ class TavilyProvider(BaseProvider):
                 continue
             title = str(row.get("title", "") or "")
             url = str(row.get("url", "") or "")
-            snippet = str(row.get("content", "") or row.get("snippet", "") or "")
+            snippet = str(row.get("text", "") or row.get("snippet", "") or row.get("highlights", "") or "")
+            if isinstance(row.get("highlights"), list):
+                snippet = " ".join(str(x) for x in row["highlights"] if x)
             out.append(
                 SearchResult(
                     title=title,
@@ -155,52 +148,54 @@ class TavilyProvider(BaseProvider):
         return super().fetch(url)
 
     def _extract_url(self, url: str) -> FetchResult | None:
-        """POST /extract for one URL. Returns success result, or None for URL-level failure."""
+        """POST /contents for one URL. Returns success result, or None for URL-level failure."""
         body: dict[str, object] = {
             "urls": [url],
-            "format": "markdown",
-            "extract_depth": "basic",
-            "include_images": False,
+            "text": True,
         }
-        payload = self._http.post_json("/extract", json_body=body, provider=self.name)
+        payload = self._http.post_json("/contents", json_body=body, provider=self.name)
         if payload is None:
             raise ProviderResponseError("Provider returned no payload.", provider=self.name)
         if not isinstance(payload, dict):
             raise ProviderResponseError("Provider returned non-object JSON.", provider=self.name)
 
         results = payload.get("results")
-        failed = payload.get("failed_results")
+        statuses = payload.get("statuses")
         if results is not None and not isinstance(results, list):
             raise ProviderResponseError("Provider results field is not a list.", provider=self.name)
-        if failed is not None and not isinstance(failed, list):
-            raise ProviderResponseError("Provider failed_results field is not a list.", provider=self.name)
+        if statuses is not None and not isinstance(statuses, list):
+            raise ProviderResponseError("Provider statuses field is not a list.", provider=self.name)
 
         for row in results or []:
             if not isinstance(row, dict):
                 continue
-            row_url = str(row.get("url", "") or "")
-            if row_url and not _urls_match(row_url, url):
-                # Prefer exact match when multiple; still accept first if only one.
-                if len(results or []) > 1:
-                    continue
-            content = str(row.get("raw_content", "") or "")
+            row_url = str(row.get("url", "") or row.get("id", "") or "")
+            if row_url and not _urls_match(row_url, url) and len(results or []) > 1:
+                continue
+            content = str(row.get("text", "") or "")
             if content.strip():
                 return self.truncate_native_content(
                     url,
                     content,
-                    final_url=row_url or url,
-                    content_type="text/markdown",
+                    final_url=str(row.get("url", "") or url),
+                    content_type="text/plain",
                 )
 
-        # URL-level failure when listed in failed_results or empty successful payload.
-        for row in failed or []:
-            if not isinstance(row, dict):
+        for st in statuses or []:
+            if not isinstance(st, dict):
                 continue
-            row_url = str(row.get("url", "") or "")
-            if not row_url or _urls_match(row_url, url):
+            sid = str(st.get("id", "") or st.get("url", "") or "")
+            status = str(st.get("status", "") or "").lower()
+            if sid and not _urls_match(sid, url) and len(statuses or []) > 1:
+                continue
+            if status and status not in {"success", "ok", "completed"}:
                 return None
-        if not results and not failed:
-            raise ProviderResponseError("Provider extract response missing results.", provider=self.name)
+            err = st.get("error")
+            if isinstance(err, dict) and err:
+                return None
+
+        if not results and not statuses:
+            raise ProviderResponseError("Provider contents response missing results.", provider=self.name)
         return None
 
 
@@ -210,6 +205,9 @@ def _urls_match(a: str, b: str) -> bool:
     host_b = (pb.hostname or "").lower().lstrip("www.")
     path_a = (pa.path or "/").rstrip("/") or "/"
     path_b = (pb.path or "/").rstrip("/") or "/"
+    # Exa may return bare URL without scheme as id.
+    if not host_a and a.strip():
+        return a.strip().rstrip("/") == b.strip().rstrip("/") or a.strip() in b or b.strip() in a
     return host_a == host_b and path_a == path_b
 
 
@@ -226,43 +224,3 @@ def _fetch_provider_failure(url: str, exc: ProviderError) -> FetchResult:
     if not msg.startswith("Fetch failed:"):
         msg = f"Fetch failed: {msg}"
     return FetchResult.failure(url, msg, category)
-
-
-def _map_tavily_safe_search(value: str | None) -> bool | None:
-    if value is None:
-        return None
-    v = str(value).strip().lower()
-    if v in {"", "none", "null"}:
-        return None
-    if v in {"0", "off", "false", "no"}:
-        return False
-    if v in {"1", "2", "on", "true", "yes", "strict", "moderate", "medium"}:
-        return True
-    return None
-
-
-def _map_tavily_time_range(value: str | None) -> str | None:
-    if value is None:
-        return None
-    v = str(value).strip().lower()
-    if v in {"", "none", "null", "any", "all"}:
-        return None
-    aliases = {
-        "d": "day",
-        "day": "day",
-        "past_day": "day",
-        "pd": "day",
-        "w": "week",
-        "week": "week",
-        "past_week": "week",
-        "pw": "week",
-        "m": "month",
-        "month": "month",
-        "past_month": "month",
-        "pm": "month",
-        "y": "year",
-        "year": "year",
-        "past_year": "year",
-        "py": "year",
-    }
-    return aliases.get(v)

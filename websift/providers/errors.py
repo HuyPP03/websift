@@ -102,6 +102,6 @@ class ProviderBillingError(ProviderError):
 
 def sanitize_provider_message(message: str) -> str:
     """Strip likely secrets from a provider error message."""
-    from web_search.provider_http import redact_secrets
+    from websift.provider_http import redact_secrets
 
     return redact_secrets(str(message or ""))

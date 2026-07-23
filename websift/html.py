@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Iterable
 from urllib.parse import urljoin
 
-from web_search.config import MIN_MAIN_CONTENT_CHARS
+from websift.config import MIN_MAIN_CONTENT_CHARS
 
 _BLOCK_TAGS = frozenset(
     {

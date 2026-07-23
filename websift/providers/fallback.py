@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from web_search.models import FetchResult, SearchRequest, SearchResult
-from web_search.providers.base import BaseProvider, FetchContext, ProviderCapabilities, SearchProvider
-from web_search.providers.errors import ProviderAuthError, ProviderConfigError, ProviderError
+from websift.models import FetchResult, SearchRequest, SearchResult
+from websift.providers.base import BaseProvider, FetchContext, ProviderCapabilities, SearchProvider
+from websift.providers.errors import ProviderAuthError, ProviderConfigError, ProviderError
 
 
 class FallbackSearchProvider(BaseProvider):

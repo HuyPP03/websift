@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any
 
-from web_search.settings import LoggingSettings
+from websift.settings import LoggingSettings
 
 _CONFIGURED = False
 
@@ -42,18 +42,21 @@ def configure_logging(settings: LoggingSettings, *, force: bool = False) -> None
     _CONFIGURED = True
 
 
+_LOGGER_NAME = "websift"
+
+
 def log_search(settings: LoggingSettings, query: str, *, provider: str | None = None) -> None:
     if not settings.include_queries:
-        logging.getLogger("web_search").info("search provider=%s", provider or "-")
+        logging.getLogger(_LOGGER_NAME).info("search provider=%s", provider or "-")
         return
     # Truncate query to avoid huge logs even when enabled.
     q = (query or "")[:200]
-    logging.getLogger("web_search").info("search provider=%s query=%r", provider or "-", q)
+    logging.getLogger(_LOGGER_NAME).info("search provider=%s query=%r", provider or "-", q)
 
 
 def log_fetch(settings: LoggingSettings, url: str) -> None:
     if not settings.include_urls:
-        logging.getLogger("web_search").info("fetch")
+        logging.getLogger(_LOGGER_NAME).info("fetch")
         return
     u = (url or "")[:300]
-    logging.getLogger("web_search").info("fetch url=%r", u)
+    logging.getLogger(_LOGGER_NAME).info("fetch url=%r", u)

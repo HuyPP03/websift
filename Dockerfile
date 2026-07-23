@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir --upgrade pip build
 
 # Copy only packaging inputs (see .dockerignore).
 COPY pyproject.toml README.md LICENSE ./
-COPY web_search ./web_search
+COPY websift ./websift
 COPY server.py ./
 
 RUN python -m build --wheel --outdir /build/dist

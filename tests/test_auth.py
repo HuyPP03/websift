@@ -10,14 +10,14 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.routing import Mount
 from starlette.testclient import TestClient
 
-from web_search.auth import (
+from websift.auth import (
     RequestBodyLimitMiddleware,
     StaticBearerTokenVerifier,
     mcp_auth_kwargs,
     resource_base_url,
 )
-from web_search.server import create_server
-from web_search.settings import AppSettings, AuthSettings, ServerSettings
+from websift.server import create_server
+from websift.settings import AppSettings, AuthSettings, ServerSettings
 
 
 @pytest.mark.asyncio

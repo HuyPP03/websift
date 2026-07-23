@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
-from web_search.config import (
+from websift.config import (
     MAX_COMPRESSED_BYTES,
     MAX_DECOMPRESSED_BYTES,
     MAX_FETCH_BYTES,
@@ -18,11 +18,11 @@ from web_search.config import (
     PDF_MAX_CHARS,
     PDF_MAX_PAGES,
 )
-from web_search.content import looks_like_html, looks_like_html_document
-from web_search.html import html_to_markdown, truncate
-from web_search.http import fetch_raw
-from web_search.models import ErrorCategory, FetchResult, SearchRequest, SearchResult
-from web_search.security import validate_http_url
+from websift.content import looks_like_html, looks_like_html_document
+from websift.html import html_to_markdown, truncate
+from websift.http import fetch_raw
+from websift.models import ErrorCategory, FetchResult, SearchRequest, SearchResult
+from websift.security import validate_http_url
 
 _GITHUB_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 _GITHUB_NON_OWNER_SEGMENTS = {
@@ -95,7 +95,7 @@ class SearchProvider(Protocol):
     def search(self, request: SearchRequest) -> list[SearchResult]:
         """Execute search and return normalized results.
 
-        Raises provider errors from ``web_search.providers.errors`` on failure.
+        Raises provider errors from ``websift.providers.errors`` on failure.
         """
         ...
 
@@ -111,7 +111,7 @@ def validate_request_capabilities(
     allow_unsupported: bool = False,
 ) -> None:
     """Raise ``ProviderConfigError`` if request uses unsupported filters."""
-    from web_search.providers.errors import ProviderConfigError
+    from websift.providers.errors import ProviderConfigError
 
     if allow_unsupported:
         return

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from web_search.client import WebSearchClient
-from web_search.models import SearchRequest
-from web_search.providers.errors import ProviderAuthError, ProviderConfigError, ProviderRateLimitError
-from web_search.providers.registry import create_provider
-from web_search.providers.tavily import TavilyProvider, TavilyProviderConfig
-from web_search.settings import AppSettings, ProviderEndpoint, ProviderSettings
+from websift.client import WebSearchClient
+from websift.models import SearchRequest
+from websift.providers.errors import ProviderAuthError, ProviderConfigError, ProviderRateLimitError
+from websift.providers.registry import create_provider
+from websift.providers.tavily import TavilyProvider, TavilyProviderConfig
+from websift.settings import AppSettings, ProviderEndpoint, ProviderSettings
 
 
 class _FakeHttp:
@@ -87,7 +87,7 @@ def test_tavily_rate_limit():
 
 def test_tavily_via_client_settings(monkeypatch: pytest.MonkeyPatch):
     payload = {"results": [{"title": "Tavily Hit", "url": "https://tv.example", "content": "ok"}]}
-    from web_search.providers import tavily as tavily_mod
+    from websift.providers import tavily as tavily_mod
 
     real_init = tavily_mod.TavilyProvider.__init__
 
@@ -151,11 +151,11 @@ def test_tavily_fetch_failed_results_falls_back_generic(monkeypatch):
     provider = TavilyProvider(TavilyProviderConfig(api_key="k"), http=http)
 
     def fake_fetch(*a, **k):
-        from web_search.models import FetchResult
+        from websift.models import FetchResult
 
         return FetchResult.success(a[0], "generic-body", content_type="text/plain")
 
-    monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+    monkeypatch.setattr("websift.providers.base.fetch_raw", fake_fetch)
     out = provider.fetch("https://example.com/a")
     assert out.ok
     assert out.content == "generic-body"
@@ -172,7 +172,7 @@ def test_tavily_fetch_auth_error_surfaces():
 
 
 def test_tavily_fetch_native_disabled_uses_generic(monkeypatch):
-    from web_search.providers.base import FetchContext
+    from websift.providers.base import FetchContext
 
     http = _FakeHttp(responses=[{"results": [{"url": "https://example.com/a", "raw_content": "paid"}]}])
     provider = TavilyProvider(
@@ -182,11 +182,11 @@ def test_tavily_fetch_native_disabled_uses_generic(monkeypatch):
     )
 
     def fake_fetch(*a, **k):
-        from web_search.models import FetchResult
+        from websift.models import FetchResult
 
         return FetchResult.success(a[0], "generic-only", content_type="text/plain")
 
-    monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+    monkeypatch.setattr("websift.providers.base.fetch_raw", fake_fetch)
     out = provider.fetch("https://example.com/a")
     assert out.content == "generic-only"
     assert http.calls == []

@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from web_search.models import SearchRequest, SearchResult
-from web_search.provider_http import ProviderHttpClient, ProviderHttpConfig
-from web_search.providers.base import BaseProvider, FetchContext, ProviderCapabilities, validate_request_capabilities
-from web_search.providers.errors import ProviderConfigError, ProviderResponseError
+from websift.models import SearchRequest, SearchResult
+from websift.provider_http import ProviderHttpClient, ProviderHttpConfig
+from websift.providers.base import BaseProvider, FetchContext, ProviderCapabilities, validate_request_capabilities
+from websift.providers.errors import ProviderConfigError, ProviderResponseError
 
 
 @dataclass(frozen=True)

@@ -9,16 +9,16 @@ import warnings
 
 import pytest
 
-import web_search.server as server_mod
-from web_search.client import WebSearchClient
-from web_search.concurrency import WorkLimits
-from web_search.http import extract_pdf_text
-from web_search.server import ServerApp, create_server, is_loopback_bind, main, warn_if_public_bind
-from web_search.settings import AppSettings, ConcurrencySettings, ProviderSettings, ServerSettings
+import websift.server as server_mod
+from websift.client import WebSearchClient
+from websift.concurrency import WorkLimits
+from websift.http import extract_pdf_text
+from websift.server import ServerApp, create_server, is_loopback_bind, main, warn_if_public_bind
+from websift.settings import AppSettings, ConcurrencySettings, ProviderSettings, ServerSettings
 
 
 def test_import_has_no_runtime_globals():
-    """Importing web_search.server must not create mcp/client or parse env."""
+    """Importing websift.server must not create mcp/client or parse env."""
     assert not hasattr(server_mod, "_client")
     assert not hasattr(server_mod, "HOST")
     assert not hasattr(server_mod, "PORT")
@@ -186,7 +186,7 @@ def test_pdf_semaphore_bounds_extract():
     lock = threading.Lock()
     release = threading.Event()
 
-    import web_search.http as http_mod
+    import websift.http as http_mod
 
     def slow_extract(raw, *, max_pages=50, max_chars=32000):
         nonlocal active, peak

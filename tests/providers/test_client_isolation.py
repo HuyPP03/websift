@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from web_search.client import _GITHUB_README_HEADERS, WebSearchClient
-from web_search.models import ErrorCategory, FetchResult
-from web_search.provider_http import ProviderHttpClient, ProviderHttpConfig, is_secret_header_name
+from websift.client import _GITHUB_README_HEADERS, WebSearchClient
+from websift.models import ErrorCategory, FetchResult
+from websift.provider_http import ProviderHttpClient, ProviderHttpConfig, is_secret_header_name
 
 
 def test_github_readme_headers_are_non_secret():
@@ -22,7 +22,7 @@ def test_github_shortcut_does_not_attach_provider_secrets(monkeypatch):
             return FetchResult.success(url, "# Hello\n", content_type="text/plain", status_code=200)
         return FetchResult.failure(url, "skip", ErrorCategory.UNKNOWN)
 
-    monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+    monkeypatch.setattr("websift.providers.base.fetch_raw", fake_fetch)
     out = WebSearchClient().fetch("https://github.com/python/cpython")
     assert "Hello" in out
     assert calls
@@ -52,8 +52,8 @@ def test_github_shortcut_does_not_attach_provider_secrets(monkeypatch):
 
 def test_tavily_extract_keeps_secrets_on_provider_http(monkeypatch):
     """Native extract posts to Tavily only; generic fallback has no provider headers."""
-    from web_search.models import FetchResult
-    from web_search.providers.tavily import TavilyProvider, TavilyProviderConfig
+    from websift.models import FetchResult
+    from websift.providers.tavily import TavilyProvider, TavilyProviderConfig
 
     class FakeHttp:
         def __init__(self):
@@ -71,7 +71,7 @@ def test_tavily_extract_keeps_secrets_on_provider_http(monkeypatch):
         generic_headers.append(extra_headers)
         return FetchResult.success(url, "generic", content_type="text/plain")
 
-    monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+    monkeypatch.setattr("websift.providers.base.fetch_raw", fake_fetch)
     http = FakeHttp()
     provider = TavilyProvider(TavilyProviderConfig(api_key="tavily-secret"), http=http)
     out = provider.fetch("https://example.com/page")

@@ -16,7 +16,7 @@ import zlib
 from typing import Optional
 from urllib.parse import urljoin, urlparse, urlunparse
 
-from web_search.config import (
+from websift.config import (
     MAX_COMPRESSED_BYTES,
     MAX_DECOMPRESSED_BYTES,
     MAX_REDIRECTS,
@@ -26,9 +26,9 @@ from web_search.config import (
     UNICODE_BOM_CODECS,
     USER_AGENTS,
 )
-from web_search.content import has_binary_magic, has_pdf_magic, is_text_mime, looks_binary
-from web_search.models import ErrorCategory, FetchResult, classify_http_status
-from web_search.security import resolve_host, validate_http_url
+from websift.content import has_binary_magic, has_pdf_magic, is_text_mime, looks_binary
+from websift.models import ErrorCategory, FetchResult, classify_http_status
+from websift.security import resolve_host, validate_http_url
 
 _REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
 

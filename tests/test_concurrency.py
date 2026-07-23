@@ -7,8 +7,8 @@ import threading
 
 import pytest
 
-from web_search.concurrency import WorkLimits
-from web_search.settings import ConcurrencySettings
+from websift.concurrency import WorkLimits
+from websift.settings import ConcurrencySettings
 
 
 def test_from_settings_defaults():

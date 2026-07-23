@@ -24,6 +24,7 @@ MCP server nhẹ, miễn phí, tự chủ (self-hosted) cung cấp khả năng t
     - [Tùy chọn 3: Docker (Thủ công)](#tùy-chọn-3-docker-thủ-công)
     - [Tùy chọn 4: Python trực tiếp (Không cần Docker)](#tùy-chọn-4-python-trực-tiếp-không-cần-docker)
   - [Sử dụng](#sử-dụng)
+    - [CLI](#cli)
     - [Như một thư viện Python (Import trực tiếp)](#như-một-thư-viện-python-import-trực-tiếp)
     - [Như một MCP Server (Cho AI Clients)](#như-một-mcp-server-cho-ai-clients)
   - [Các công cụ (Tools)](#các-công-cụ-tools)
@@ -155,8 +156,10 @@ Luồng ra ngoài: **search** → provider (mặc định DuckDuckGo qua `ddgs`)
 ### Cấu trúc module
 
 ```
-web_search/
-├── __init__.py       # WebSearchClient + __version__ (nguồn version duy nhất)
+websift/
+├── __init__.py       # WebSearchClient, AppSettings, __version__
+├── __main__.py       # python -m websift
+├── cli.py            # argparse CLI (serve / search / fetch)
 ├── settings.py       # AppSettings.from_env() — không đọc env khi import
 ├── concurrency.py    # WorkLimits (search/fetch/PDF)
 ├── models.py         # SearchResponse / FetchResult nội bộ
@@ -167,9 +170,9 @@ web_search/
 ├── html.py           # HTML → Markdown, main content, truncate
 ├── client.py         # façade search/fetch công khai
 ├── provider_http.py  # transport credential cho provider (tách page fetch)
-├── providers/        # contract SearchProvider, registry, adapter DDGS
-└── server.py         # create_server / ServerApp / main()
-server.py             # entry mỏng → web_search.server:main
+├── providers/        # contract SearchProvider, registry, adapter DDGS + khác
+└── server.py         # create_server / ServerApp
+server.py             # entry mỏng → websift.cli:main
 ```
 
 ---
@@ -219,25 +222,58 @@ pip install -r requirements.txt
 pip install -e .
 
 # Chạy server
-websift
-# python -m web_search.server
-# python server.py
+websift serve
+# websift                 # tương đương serve khi không có command
+# python -m websift serve
+# python server.py serve
 ```
 
 ---
 
 ## Sử dụng
 
+### CLI
+
+Sau `pip install websift`, lệnh `websift` hỗ trợ help, version và các subcommand:
+
+```bash
+websift --help
+websift --version
+
+# Khởi động MCP server (mặc định khi không có command)
+websift
+websift serve
+websift serve --host 0.0.0.0 --port 9000 --transport streamable-http
+websift serve --auth-mode bearer --bearer-token 'a-long-random-secret'
+websift serve --provider ddgs --max-results 8 --log-level DEBUG
+
+# Lệnh one-shot (không cần MCP server)
+websift search "tính năng Python 3.12"
+websift search "asyncio tutorial" -n 10 --provider ddgs
+websift fetch https://docs.python.org/3/
+websift fetch https://example.com/doc.pdf --max-chars 20000
+```
+
+| Lệnh | Mục đích |
+| ---- | -------- |
+| `websift` / `websift serve` | Chạy MCP server |
+| `websift search QUERY` | In kết quả tìm kiếm ra stdout |
+| `websift fetch URL` | In nội dung trang/PDF ra stdout |
+| `websift --version` / `-V` | In version package |
+| `websift --help` / `-h` | Hiện help |
+
+Cờ CLI ghi đè biến môi trường tương ứng cho process hiện tại. Ma trận env đầy đủ nằm ở [Cấu hình](#cấu-hình).
+
 ### Như một thư viện Python (Import trực tiếp)
 
 Dùng `WebSearchClient` trực tiếp trong code Python — **không cần chạy server**:
 
 ```python
-from web_search import WebSearchClient
+from websift import WebSearchClient
 
 client = WebSearchClient()
 
-# Tìm kiếm web (DuckDuckGo)
+# Tìm kiếm web (DuckDuckGo mặc định)
 results = client.search("tính năng mới Python 3.12")
 print(results)
 
@@ -245,6 +281,71 @@ print(results)
 content = client.fetch("https://docs.python.org/3/")
 print(content)
 ```
+
+#### Tùy biến `WebSearchClient`
+
+Truyền kwargs vào constructor — không cần sửa env khi dùng như thư viện:
+
+```python
+from websift import WebSearchClient, AppSettings
+from websift.settings import ProviderSettings, ExtractionSettings, FetchSettings
+
+# Tinh chỉnh đơn giản
+client = WebSearchClient(
+    max_results=10,
+    timeout=20,              # timeout chung search+fetch (legacy)
+    max_page_chars=50_000,
+)
+
+# Timeout tách rời + tên provider + cờ extraction
+client = WebSearchClient(
+    max_results=8,
+    search_timeout=15,
+    fetch_timeout=45,
+    max_page_chars=64_000,
+    provider="ddgs",           # hoặc "brave" / "tavily" / "exa" / "searxng"
+    include_links=True,
+    include_images=False,
+    output_format="markdown",  # hoặc "text"
+    native_fetch=True,         # Tavily/Exa extract trả phí khi có key
+)
+
+# Provider có key (key chỉ nằm trong process — không bao giờ nhận qua MCP tool)
+client = WebSearchClient(
+    provider="brave",
+    api_key="BSA...",
+    # base_url="https://api.search.brave.com",  # ghi đè tùy chọn
+    fallback_providers=["ddgs"],
+    max_results=5,
+)
+
+# Cây settings đầy đủ (hoặc AppSettings.from_env())
+settings = AppSettings(
+    provider=ProviderSettings(name="ddgs", max_results=10, timeout_seconds=20),
+    fetch=FetchSettings(timeout_seconds=45),
+    extraction=ExtractionSettings(max_page_chars=50_000, include_links=True),
+)
+client = WebSearchClient(settings=settings)
+
+# Hoặc load từ env
+client = WebSearchClient(settings=AppSettings.from_env())
+```
+
+| Kwarg | Kiểu | Mô tả |
+| ----- | ---- | ----- |
+| `max_results` | `int` | Số kết quả tìm kiếm tối đa (mặc định `5`) |
+| `timeout` | `int` | Timeout search+fetch chung (giây) khi không set riêng (mặc định `30`) |
+| `search_timeout` | `float` | Timeout chỉ cho search |
+| `fetch_timeout` | `float` | Timeout chỉ cho fetch |
+| `max_page_chars` | `int` | Số ký tự tối đa trả về từ fetch |
+| `provider` | `str` hoặc `SearchProvider` | Tên provider (`ddgs`, `brave`, …) hoặc instance |
+| `api_key` / `base_url` | `str` | Credential/endpoint cho provider có key hoặc self-hosted |
+| `fallback_providers` | sequence `str` | Chuỗi fallback sau provider chính |
+| `safe_search` / `region` / `time_range` | `str` | Bộ lọc tìm kiếm tùy chọn |
+| `include_links` / `include_images` | `bool` | Tùy chọn trích xuất HTML |
+| `output_format` | `str` | `markdown` hoặc `text` |
+| `native_fetch` | `bool` | Cho phép Tavily/Exa native extract khi fetch |
+| `settings` | `AppSettings` | Cây cấu hình đầy đủ (kwargs nâng cao vẫn overlay khi set) |
 
 **Phù hợp cho:**
 
@@ -258,18 +359,24 @@ print(content)
 Chạy server để expose tools cho bất kỳ AI client MCP nào:
 
 ```bash
-# Khởi động server (mặc định: cổng 8787)
-websift
+# Khởi động server (mặc định: 127.0.0.1:8787, streamable-http)
+websift serve
 
-# Cổng và transport tùy chỉnh
-MCP_PORT=9000 MCP_TRANSPORT=sse websift
+# Bind / transport tùy chỉnh qua CLI (ghi đè env cho process này)
+websift serve --host 0.0.0.0 --port 9000 --transport sse
+
+# Hoặc qua biến môi trường
+MCP_PORT=9000 MCP_TRANSPORT=sse websift serve
 ```
 
 Hoặc qua Python:
 
 ```python
-from web_search.server import main
-main()
+from websift.server import create_server
+from websift.settings import AppSettings
+
+create_server(AppSettings.from_env()).run()
+# hoặc: from websift.cli import main; main(["serve"])
 ```
 
 **Phù hợp cho:**
@@ -343,7 +450,7 @@ The Python programming language...
 | `FETCH_TIMEOUT_SECONDS`  | `30`              | Timeout fetch trang (giây)                                              |
 | `SEARCH_TIMEOUT`         | (alias)             | **Deprecated**: nếu set và thiếu timeout cụ thể thì map cả hai |
 | `SEARCH_FALLBACK_PROVIDERS` | (rỗng)           | Chuỗi fallback allowlist (không fallback config/auth error)           |
-| `PAGE_MAX_CHARS`         | `32000`           | Số ký tự tối đa trả về từ fetch                                 |
+| `PAGE_MAX_CHARS`         | `128000`          | Số ký tự tối đa trả về từ fetch                                 |
 | `SEARCH_MAX_CONCURRENCY` | `8`               | Số search đồng thời tối đa                                      |
 | `FETCH_MAX_CONCURRENCY`  | `16`              | Số fetch trang đồng thời tối đa                                 |
 | `PDF_MAX_CONCURRENCY`    | `2`               | Số parse PDF đồng thời tối đa                                   |
@@ -370,9 +477,9 @@ Filter tùy chọn: `SEARCH_SAFE_SEARCH`, `SEARCH_REGION`, `SEARCH_TIME_RANGE`. 
 
 | Cài đặt                   | Giá trị | Mô tả                         |
 | ---------------------------- | --------- | ------------------------------- |
-| Kích thước trang tối đa | 2 MB      | Giới hạn fetch trang thường |
-| Kích thước PDF tối đa   | 20 MB     | Giới hạn fetch PDF            |
-| Ký tự đầu ra tối đa    | 32,000    | Số ký tự gửi đến LLM      |
+| Kích thước trang tối đa | 4 MB      | Giới hạn fetch trang thường |
+| Kích thước PDF tối đa    | 20 MB     | Giới hạn fetch PDF          |
+| Ký tự đầu ra tối đa    | 128,000   | Số ký tự gửi đến LLM      |
 | Redirect tối đa            | 5         | Giới hạn chuỗi redirect HTTP |
 
 ---
@@ -630,7 +737,7 @@ Server này đặc biệt phù hợp cho Agentic AI vì:
 | **DNS Pinning + SNI**           | Kết nối tới IP đã pin đã validate; TLS SNI/hostname khớp host yêu cầu                            |
 | **Re-check redirect**           | Mỗi redirect chạy lại URL + multi-answer DNS (tối đa 5 hop)                                        |
 | **Phát hiện nhị phân**     | Hình ảnh, executable, archive bị chặn                                                               |
-| **Giới hạn kích thước**   | Cap body/decompress; 2 MB trang thường, 20 MB PDF, 32,000 ký tự đầu ra mặc định                |
+| **Giới hạn kích thước**   | Cap body/decompress; 4 MB trang thường, 20 MB PDF, 128,000 ký tự đầu ra mặc định                |
 | **Thứ tự charset**             | BOM → HTTP `Content-Type` → HTML meta → UTF-8                                                      |
 | **Ranh giới credential**      | Secret provider chỉ trong provider HTTP; page fetch không kế thừa                                   |
 
@@ -654,16 +761,19 @@ websift/
 ├── docker-compose.yml      # Docker Compose
 ├── Dockerfile              # Python 3.12-slim
 ├── requirements.txt        # Mirror runtime deps (ưu tiên pyproject.toml)
-├── server.py               # Entry mỏng → web_search.server:main
+├── server.py               # Entry mỏng → websift.cli:main
 ├── .env.example            # Mẫu biến môi trường
 ├── .github/workflows/      # Matrix build/test + publish PyPI
 ├── README.md               # Tài liệu tiếng Anh
 ├── docs/
 │   └── README.vi.md        # Tài liệu tiếng Việt (tệp này)
 ├── tests/                  # Suite pytest offline (markers: live, provider)
-└── web_search/
-    ├── __init__.py         # WebSearchClient, __version__
+└── websift/
+    ├── __init__.py         # WebSearchClient, AppSettings, __version__
+    ├── __main__.py         # python -m websift
+    ├── cli.py              # argparse CLI
     ├── settings.py         # AppSettings typed
+    ├── auth.py             # Bearer + body limit
     ├── concurrency.py      # WorkLimits
     ├── models.py           # Structured internals
     ├── config.py           # Constants
@@ -674,16 +784,16 @@ websift/
     ├── client.py           # Façade công khai
     ├── provider_http.py    # Transport credential provider
     ├── providers/          # DDGS + registry
-    └── server.py           # create_server / main
+    └── server.py           # create_server / ServerApp
 ```
 
-### Đặt tên (dual naming)
+### Đặt tên
 
 | Bề mặt | Tên |
 | ------ | --- |
-| PyPI / CLI / Docker | `websift` |
-| Import path | `web_search` |
-| Nguồn version | `web_search.__version__` |
+| PyPI / CLI / Docker / import | `websift` |
+| MCP tools (ổn định) | `web_search`, `web_fetch` |
+| Nguồn version | `websift.__version__` |
 
 ### Chạy local
 
@@ -694,22 +804,30 @@ pip install websift
 # Hoặc editable + dev tools
 pip install -e ".[dev]"
 
-# Chạy MCP server
-websift
+# CLI help / version
+websift --help
+websift --version
 
-# Cài đặt tùy chỉnh
-MCP_PORT=9000 MCP_TRANSPORT=sse websift
+# Chạy MCP server
+websift serve
+
+# Cài đặt tùy chỉnh qua CLI (hoặc env)
+websift serve --port 9000 --transport sse
+
+# One-shot search / fetch
+websift search "test"
+websift fetch https://example.com
 
 # Thư viện (không cần server)
-python -c "from web_search import WebSearchClient; print(WebSearchClient().search('test'))"
+python -c "from websift import WebSearchClient; print(WebSearchClient().search('test'))"
 ```
 
 ### Lint, test, build
 
 ```bash
-ruff check web_search tests
-ruff format --check web_search tests
-python -m pytest --cov=web_search --cov-report=term-missing --cov-fail-under=85 -m "not live and not provider"
+ruff check websift tests
+ruff format --check websift tests
+python -m pytest --cov=websift --cov-report=term-missing --cov-fail-under=85 -m "not live and not provider"
 python -m build
 twine check dist/*
 ```
@@ -769,21 +887,22 @@ Giới hạn body tùy chọn: `MCP_MAX_REQUEST_BODY_BYTES=1048576`.
 - **sse** — Server-Sent Events cũ (vẫn được hỗ trợ)
 - **stdio** — cho giao tiếp tiến trình local
 
-### Hỏi: Tại sao đầu ra bị giới hạn 32,000 ký tự?
+### Hỏi: Tại sao đầu ra bị giới hạn 128,000 ký tự?
 
-Điều này giữ phản hồi trong khung ngữ cảnh điển hình của LLM trong khi vẫn cung cấp nội dung đáng kể. Bạn có thể điều chỉnh `MAX_PAGE_CHARS` trong `web_search/config.py` nếu cần.
+Điều này giữ phản hồi trong khung ngữ cảnh điển hình của LLM trong khi vẫn cung cấp nội dung đáng kể. Bạn có thể hạ/nâng qua `PAGE_MAX_CHARS`, `WebSearchClient(max_page_chars=...)`, hoặc `MAX_PAGE_CHARS` trong `websift/config.py`.
 
 ### Hỏi: Có thể dùng cho trang web nội bộ/riêng không?
 
-Mặc định, bảo vệ SSRF chặn các dải IP riêng. Để cho phép trang nội bộ, sửa `web_search/security.py` để whitelist domain hoặc dải IP cụ thể.
+Mặc định, bảo vệ SSRF chặn các dải IP riêng. Để cho phép trang nội bộ, sửa `websift/security.py` để whitelist domain hoặc dải IP cụ thể.
 
 ### Hỏi: Có thể dùng như thư viện Python (không qua MCP) không?
 
 **Có!** Chỉ cần `pip install websift` rồi import trực tiếp:
 
 ```python
-from web_search import WebSearchClient
-client = WebSearchClient()
+from websift import WebSearchClient
+
+client = WebSearchClient(max_results=10, search_timeout=20, fetch_timeout=45)
 client.search("từ khóa tìm kiếm")
 client.fetch("https://example.com")
 ```

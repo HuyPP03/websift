@@ -2,7 +2,7 @@
 
 import re
 
-from web_search.config import BINARY_MAGIC, TEXT_MIME_PREFIXES
+from websift.config import BINARY_MAGIC, TEXT_MIME_PREFIXES
 
 _HTML_DOCUMENT_RE = re.compile(r"(<\?xml|<!doctype\s+html|<html[\s>])")
 

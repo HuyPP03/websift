@@ -1,6 +1,6 @@
 """Search providers package."""
 
-from web_search.providers.base import (
+from websift.providers.base import (
     BaseProvider,
     FetchContext,
     ProviderCapabilities,
@@ -8,9 +8,9 @@ from web_search.providers.base import (
     process_fetched_body,
     validate_request_capabilities,
 )
-from web_search.providers.brave import BraveProvider, BraveProviderConfig
-from web_search.providers.ddgs import DdgsProvider, DdgsProviderConfig
-from web_search.providers.errors import (
+from websift.providers.brave import BraveProvider, BraveProviderConfig
+from websift.providers.ddgs import DdgsProvider, DdgsProviderConfig
+from websift.providers.errors import (
     ProviderAuthError,
     ProviderBillingError,
     ProviderConfigError,
@@ -21,11 +21,11 @@ from web_search.providers.errors import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
-from web_search.providers.exa import ExaProvider, ExaProviderConfig
-from web_search.providers.fallback import FallbackSearchProvider
-from web_search.providers.registry import create_provider, get_default_provider, list_providers
-from web_search.providers.searxng import SearxngProvider, SearxngProviderConfig
-from web_search.providers.tavily import TavilyProvider, TavilyProviderConfig
+from websift.providers.exa import ExaProvider, ExaProviderConfig
+from websift.providers.fallback import FallbackSearchProvider
+from websift.providers.registry import create_provider, get_default_provider, list_providers
+from websift.providers.searxng import SearxngProvider, SearxngProviderConfig
+from websift.providers.tavily import TavilyProvider, TavilyProviderConfig
 
 __all__ = [
     "BaseProvider",

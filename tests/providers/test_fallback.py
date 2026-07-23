@@ -8,17 +8,17 @@ from email.message import Message
 
 import pytest
 
-from web_search.client import WebSearchClient
-from web_search.models import SearchRequest, SearchResult
-from web_search.provider_http import ProviderHttpClient, ProviderHttpConfig
-from web_search.providers.errors import (
+from websift.client import WebSearchClient
+from websift.models import SearchRequest, SearchResult
+from websift.provider_http import ProviderHttpClient, ProviderHttpConfig
+from websift.providers.errors import (
     ProviderAuthError,
     ProviderConfigError,
     ProviderRateLimitError,
     ProviderUnavailableError,
 )
-from web_search.providers.fallback import FallbackSearchProvider
-from web_search.settings import AppSettings, ProviderEndpoint, ProviderSettings
+from websift.providers.fallback import FallbackSearchProvider
+from websift.settings import AppSettings, ProviderEndpoint, ProviderSettings
 
 
 class _StubProvider:
@@ -151,8 +151,8 @@ def test_post_json_success(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_client_fallback_chain(monkeypatch: pytest.MonkeyPatch):
-    from web_search.providers import brave as brave_mod
-    from web_search.providers import ddgs as ddgs_mod
+    from websift.providers import brave as brave_mod
+    from websift.providers import ddgs as ddgs_mod
 
     class _BraveHttp:
         def get_json(self, path="", *, params=None, extra_headers=None, provider=None):

@@ -4,20 +4,20 @@ from __future__ import annotations
 
 import pytest
 
-from web_search.client import (
+from websift.client import (
     WebSearchClient,
     format_fetch_result,
     format_search_response,
     process_fetched_body,
 )
-from web_search.models import (
+from websift.models import (
     ErrorCategory,
     FetchResult,
     SearchRequest,
     SearchResponse,
     SearchResult,
 )
-from web_search.providers.base import github_readme_api_url
+from websift.providers.base import github_readme_api_url
 
 
 class TestSearch:
@@ -106,14 +106,14 @@ class TestFetch:
 
     def test_fetch_error_passthrough(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
-            "web_search.providers.base.fetch_raw",
+            "websift.providers.base.fetch_raw",
             lambda *a, **k: FetchResult.failure("http://x/", "Blocked: private", ErrorCategory.BLOCKED),
         )
         assert WebSearchClient().fetch("http://x/") == "Blocked: private"
 
     def test_fetch_plain_text(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
-            "web_search.providers.base.fetch_raw",
+            "websift.providers.base.fetch_raw",
             lambda *a, **k: FetchResult.success("https://example.com/a.txt", "plain body", content_type="text/plain"),
         )
         out = WebSearchClient().fetch("https://example.com/a.txt")
@@ -122,7 +122,7 @@ class TestFetch:
     def test_fetch_html_converted(self, monkeypatch: pytest.MonkeyPatch):
         html = "<html><body><h1>Hi</h1><p>There</p></body></html>"
         monkeypatch.setattr(
-            "web_search.providers.base.fetch_raw",
+            "websift.providers.base.fetch_raw",
             lambda *a, **k: FetchResult.success("https://example.com/", html, content_type="text/html"),
         )
         out = WebSearchClient().fetch("https://example.com/")
@@ -138,7 +138,7 @@ class TestFetch:
                 return FetchResult.success(url, "# Repo\n\nHello", content_type="text/plain", status_code=200)
             return FetchResult.failure(url, "should not hit", ErrorCategory.UNKNOWN)
 
-        monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+        monkeypatch.setattr("websift.providers.base.fetch_raw", fake_fetch)
         out = WebSearchClient().fetch("https://github.com/python/cpython")
         assert "README of https://github.com/python/cpython" in out
         assert "Hello" in out
@@ -150,7 +150,7 @@ class TestFetch:
 
     def test_github_non_repo_paths_skip_shortcut(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
-            "web_search.providers.base.fetch_raw",
+            "websift.providers.base.fetch_raw",
             lambda *a, **k: FetchResult.success(a[0], "page", content_type="text/plain"),
         )
         assert github_readme_api_url("https://github.com/features") is None
@@ -164,7 +164,7 @@ class TestFetch:
 
     def test_truncation_applied(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
-            "web_search.providers.base.fetch_raw",
+            "websift.providers.base.fetch_raw",
             lambda *a, **k: FetchResult.success("https://example.com/", "x" * 1000, content_type="text/plain"),
         )
         out = WebSearchClient(max_page_chars=50).fetch("https://example.com/")
@@ -176,7 +176,7 @@ class TestFetch:
                 return FetchResult.success(url, "   ", content_type="text/plain")
             return FetchResult.success(url, "html-page", content_type="text/plain")
 
-        monkeypatch.setattr("web_search.providers.base.fetch_raw", fake_fetch)
+        monkeypatch.setattr("websift.providers.base.fetch_raw", fake_fetch)
         out = WebSearchClient().fetch("https://github.com/foo/bar")
         assert out == "html-page"
 
@@ -255,7 +255,7 @@ class TestStructuredInternals:
         assert empty.error_category == ErrorCategory.EMPTY_INPUT
 
         monkeypatch.setattr(
-            "web_search.providers.base.fetch_raw",
+            "websift.providers.base.fetch_raw",
             lambda *a, **k: FetchResult.failure(
                 a[0],
                 "(content exceeds download limit of 1 bytes)",
@@ -269,14 +269,14 @@ class TestStructuredInternals:
         assert not overflow.ok
 
         monkeypatch.setattr(
-            "web_search.providers.base.fetch_raw",
+            "websift.providers.base.fetch_raw",
             lambda *a, **k: FetchResult.failure(a[0], "Failed to fetch URL: timeout (x)", ErrorCategory.TIMEOUT),
         )
         timeout = WebSearchClient().fetch_structured("https://example.com/")
         assert timeout.error_category == ErrorCategory.TIMEOUT
 
         monkeypatch.setattr(
-            "web_search.providers.base.fetch_raw",
+            "websift.providers.base.fetch_raw",
             lambda *a, **k: FetchResult.failure(
                 a[0], "Failed to fetch URL: HTTP 401", ErrorCategory.AUTH, status_code=401
             ),
@@ -285,7 +285,7 @@ class TestStructuredInternals:
         assert auth.error_category == ErrorCategory.AUTH
 
         monkeypatch.setattr(
-            "web_search.providers.base.fetch_raw",
+            "websift.providers.base.fetch_raw",
             lambda *a, **k: FetchResult.failure(
                 a[0], "(non-text content: image/png)", ErrorCategory.UNSUPPORTED, content_type="image/png"
             ),
@@ -294,7 +294,7 @@ class TestStructuredInternals:
         assert unsup.error_category == ErrorCategory.UNSUPPORTED
 
         monkeypatch.setattr(
-            "web_search.providers.base.fetch_raw",
+            "websift.providers.base.fetch_raw",
             lambda *a, **k: FetchResult.success(
                 a[0], "ok-body", content_type="text/plain", status_code=200, bytes_read=7
             ),

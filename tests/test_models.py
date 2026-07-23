@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from web_search.models import (
+from websift.models import (
     ErrorCategory,
     FetchResult,
     SearchRequest,

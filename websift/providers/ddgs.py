@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from web_search.models import SearchRequest, SearchResult
-from web_search.providers.base import BaseProvider, FetchContext, ProviderCapabilities, validate_request_capabilities
-from web_search.providers.errors import (
+from websift.models import SearchRequest, SearchResult
+from websift.providers.base import BaseProvider, FetchContext, ProviderCapabilities, validate_request_capabilities
+from websift.providers.errors import (
     ProviderError,
     ProviderImportError,
     ProviderResponseError,
@@ -97,7 +97,7 @@ def _map_ddgs_exception(exc: BaseException, *, provider: str) -> ProviderError:
     if "timeout" in text or "timed out" in text or "timeout" in name:
         return ProviderTimeoutError(f"Search failed: {msg}", provider=provider, cause=exc)
     if "rate" in text or "429" in text or "limit" in text:
-        from web_search.providers.errors import ProviderRateLimitError
+        from websift.providers.errors import ProviderRateLimitError
 
         return ProviderRateLimitError(f"Search failed: {msg}", provider=provider, cause=exc)
     if isinstance(exc, (ConnectionError, OSError)) or "connection" in text:

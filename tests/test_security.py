@@ -6,7 +6,7 @@ import socket
 
 import pytest
 
-from web_search.security import is_blocked_ip, is_private_ip, resolve_host, validate_http_url
+from websift.security import is_blocked_ip, is_private_ip, resolve_host, validate_http_url
 
 
 class TestIsBlockedIp:
@@ -239,7 +239,7 @@ class TestResolveHost:
 
 
 def test_validate_http_disallow_http_scheme():
-    from web_search.security import validate_http_url
+    from websift.security import validate_http_url
 
     ok, reason, _ = validate_http_url("http://example.com/", allow_http=False)
     assert ok is False
@@ -247,7 +247,7 @@ def test_validate_http_disallow_http_scheme():
 
 
 def test_validate_allowed_ports():
-    from web_search.security import validate_http_url
+    from websift.security import validate_http_url
 
     ok, _, v = validate_http_url("https://example.com:8443/", allowed_ports=frozenset({80, 443}))
     assert ok is False

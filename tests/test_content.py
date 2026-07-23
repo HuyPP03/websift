@@ -1,6 +1,6 @@
 """Content-type detection helpers."""
 
-from web_search.content import (
+from websift.content import (
     has_binary_magic,
     has_pdf_magic,
     is_text_mime,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from web_search.provider_http import (
+from websift.provider_http import (
     ProviderHttpClient,
     ProviderHttpConfig,
     is_secret_header_name,
@@ -12,7 +12,7 @@ from web_search.provider_http import (
     redact_secrets,
     validate_provider_base_url,
 )
-from web_search.providers.errors import ProviderConfigError
+from websift.providers.errors import ProviderConfigError
 
 
 class TestRedaction:

@@ -8,8 +8,8 @@ from email.message import Message
 
 import pytest
 
-from web_search.provider_http import ProviderHttpClient, ProviderHttpConfig
-from web_search.providers.errors import (
+from websift.provider_http import ProviderHttpClient, ProviderHttpConfig
+from websift.providers.errors import (
     ProviderAuthError,
     ProviderConfigError,
     ProviderRateLimitError,
@@ -128,7 +128,7 @@ def test_retry_on_503_then_success(monkeypatch: pytest.MonkeyPatch):
         return _FakeHTTPResponse(json.dumps({"results": []}).encode(), 200)
 
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
-    monkeypatch.setattr("web_search.provider_http.time.sleep", lambda s: None)
+    monkeypatch.setattr("websift.provider_http.time.sleep", lambda s: None)
     c = ProviderHttpClient(
         ProviderHttpConfig(base_url="https://api.example.com", retry_max=2, retry_backoff_seconds=0.01)
     )

@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from web_search.http import (
+from websift.http import (
     decompress_body,
     detect_charset,
     extract_pdf_text,
@@ -191,7 +191,7 @@ class TestFetchRawValidation:
 
     def test_blocks_private_dns(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
-            "web_search.http.resolve_host",
+            "websift.http.resolve_host",
             lambda host, port: (False, "Blocked: private", ""),
         )
         result = fetch_raw("http://internal.example/", 5, 1000, 2000)
@@ -235,7 +235,7 @@ class TestFetchRawLocalServer:
                 return True, "", "127.0.0.1"
             return False, f"Blocked: {hostname}", ""
 
-        monkeypatch.setattr("web_search.http.resolve_host", _resolve)
+        monkeypatch.setattr("websift.http.resolve_host", _resolve)
         result = fetch_raw(srv.url("/go"), 5, 100_000, 200_000)
         assert not result.ok
         assert "Blocked" in (result.error_message or "")
@@ -421,14 +421,14 @@ class TestFetchRawLocalServer:
         srv = allow_loopback_fetch
         srv.redirect("/a", srv.url("/b"))
         srv.redirect("/b", srv.url("/a"))
-        monkeypatch.setattr("web_search.http.MAX_REDIRECTS", 3)
+        monkeypatch.setattr("websift.http.MAX_REDIRECTS", 3)
         result = fetch_raw(srv.url("/a"), 5, 100_000, 200_000)
         assert not result.ok
         assert "redirect" in (result.error_message or "").lower()
 
     def test_network_exception_message(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
-            "web_search.http.resolve_host",
+            "websift.http.resolve_host",
             lambda host, port: (True, "", "8.8.8.8"),
         )
 
@@ -467,7 +467,7 @@ class TestFetchRawLocalServer:
 class TestHttpErrorRedirectPath:
     def test_httperror_non_redirect(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
-            "web_search.http.resolve_host",
+            "websift.http.resolve_host",
             lambda host, port: (True, "", "8.8.8.8"),
         )
 
@@ -484,7 +484,7 @@ class TestHttpErrorRedirectPath:
 
     def test_httperror_redirect_missing_location(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
-            "web_search.http.resolve_host",
+            "websift.http.resolve_host",
             lambda host, port: (True, "", "8.8.8.8"),
         )
 
@@ -509,7 +509,7 @@ class TestHttpErrorRedirectPath:
                 return True, "", "8.8.8.8"
             return False, "Blocked: private", ""
 
-        monkeypatch.setattr("web_search.http.resolve_host", _resolve)
+        monkeypatch.setattr("websift.http.resolve_host", _resolve)
 
         class H(dict):
             def get(self, k, default=None):
@@ -530,7 +530,7 @@ class TestHttpErrorRedirectPath:
 
     def test_httperror_redirect_then_success(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
-            "web_search.http.resolve_host",
+            "websift.http.resolve_host",
             lambda host, port: (True, "", "8.8.8.8"),
         )
 
@@ -579,9 +579,9 @@ class TestHttpErrorRedirectPath:
         assert result.content == "final-body"
 
     def test_too_many_redirects_via_httperror(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr("web_search.http.MAX_REDIRECTS", 2)
+        monkeypatch.setattr("websift.http.MAX_REDIRECTS", 2)
         monkeypatch.setattr(
-            "web_search.http.resolve_host",
+            "websift.http.resolve_host",
             lambda host, port: (True, "", "8.8.8.8"),
         )
 
@@ -662,7 +662,7 @@ class TestExtractPdfText:
     def test_no_pdfminer_import(self):
         import inspect
 
-        import web_search.http as http_mod
+        import websift.http as http_mod
 
         src = inspect.getsource(http_mod)
         assert "pdfminer" not in src

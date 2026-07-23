@@ -7,7 +7,7 @@ import threading
 from dataclasses import dataclass
 from typing import Callable, TypeVar
 
-from web_search.settings import ConcurrencySettings
+from websift.settings import ConcurrencySettings
 
 T = TypeVar("T")
 
