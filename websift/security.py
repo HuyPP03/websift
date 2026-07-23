@@ -57,11 +57,56 @@ class ValidatedURL:
         return (self.scheme == "https" and self.port == 443) or (self.scheme == "http" and self.port == 80)
 
 
+def hostname_matches_domain(hostname: str, pattern: str) -> bool:
+    """Return True if ``hostname`` equals ``pattern`` or is a subdomain of it.
+
+    Patterns are case-insensitive. A leading ``*.`` is optional (same meaning).
+    Empty pattern never matches.
+    """
+    host = (hostname or "").strip().lower().rstrip(".")
+    pat = (pattern or "").strip().lower().rstrip(".")
+    if not host or not pat:
+        return False
+    if pat.startswith("*."):
+        pat = pat[2:]
+    if not pat:
+        return False
+    return host == pat or host.endswith("." + pat)
+
+
+def check_domain_policy(
+    hostname: str,
+    *,
+    allowed_domains: frozenset[str] | set[str] | None = None,
+    denied_domains: frozenset[str] | set[str] | None = None,
+) -> tuple[bool, str]:
+    """Apply allow/deny hostname lists (deny first, then optional allowlist)."""
+    host = (hostname or "").strip().lower().rstrip(".")
+    if not host:
+        return False, "Blocked: URL missing hostname."
+    if denied_domains:
+        for pattern in denied_domains:
+            if hostname_matches_domain(host, pattern):
+                return (
+                    False,
+                    f"Blocked: hostname {host!r} is denied by FETCH_DENIED_DOMAINS.",
+                )
+    if allowed_domains:
+        if not any(hostname_matches_domain(host, p) for p in allowed_domains):
+            return (
+                False,
+                f"Blocked: hostname {host!r} is not in FETCH_ALLOWED_DOMAINS.",
+            )
+    return True, ""
+
+
 def validate_http_url(
     url: str,
     *,
     allow_http: bool = True,
     allowed_ports: frozenset[int] | set[int] | None = None,
+    allowed_domains: frozenset[str] | set[str] | None = None,
+    denied_domains: frozenset[str] | set[str] | None = None,
 ) -> tuple[bool, str, ValidatedURL | None]:
     """Validate and normalize an absolute http(s) URL for fetch/redirect targets.
 
@@ -71,6 +116,7 @@ def validate_http_url(
     - reject embedded credentials / userinfo
     - port must be in 1..65535 (malformed ports rejected)
     - when ``allowed_ports`` is non-empty, only those ports are accepted
+    - optional ``allowed_domains`` / ``denied_domains`` host suffix policy
     - hostname normalized via IDNA where needed
     """
     if not url or not str(url).strip():
@@ -126,6 +172,14 @@ def validate_http_url(
     else:
         if is_blocked_ip(hostname_ascii):
             return False, f"Blocked: {hostname_ascii!r} is a non-global address.", None
+
+    ok_dom, reason_dom = check_domain_policy(
+        hostname_ascii,
+        allowed_domains=allowed_domains,
+        denied_domains=denied_domains,
+    )
+    if not ok_dom:
+        return False, reason_dom, None
 
     return (
         True,

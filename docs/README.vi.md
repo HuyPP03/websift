@@ -263,15 +263,20 @@ websift search "python" --json          # JSON có cấu trúc cho script
 websift fetch https://docs.python.org/3/
 websift fetch https://example.com/doc.pdf --max-chars 20000
 websift fetch https://example.com --json
+websift doctor
+websift providers
+websift search "q1" "q2" --json
 ```
 
 | Lệnh | Mục đích |
 | ---- | -------- |
 | `websift` / `websift serve` | Chạy MCP server |
-| `websift search QUERY` | In kết quả tìm kiếm ra stdout |
-| `websift search QUERY --json` | JSON: `ok` / `results` / `error` (exit `1` nếu lỗi) |
+| `websift search QUERY…` | In kết quả search (một hoặc nhiều query) |
+| `websift search QUERY --json` | JSON schema v2 (`ok` / `results` / `error`; batch khi multi-query) |
 | `websift fetch URL` | In nội dung trang/PDF ra stdout |
-| `websift fetch URL --json` | JSON: `ok` / `content` / `error` (exit `1` nếu lỗi) |
+| `websift fetch URL --json` | JSON schema v2 (`ok` / `content` / `error`) |
+| `websift doctor` | Kiểm tra settings / credentials (che secret) / MCP |
+| `websift providers` | Liệt kê provider đã đăng ký và capabilities |
 | `websift --version` / `-V` | In version package |
 | `websift --help` / `-h` | Hiện help |
 
@@ -477,7 +482,9 @@ The Python programming language...
 | `SEARCH_MAX_CONCURRENCY` | `8`               | Số search đồng thời tối đa                                      |
 | `FETCH_MAX_CONCURRENCY`  | `16`              | Số fetch trang đồng thời tối đa                                 |
 | `PDF_MAX_CONCURRENCY`    | `2`               | Số parse PDF đồng thời tối đa                                   |
-| `CACHE_ENABLED`          | `false`           | Bật cache TTL/LRU trong bộ nhớ cho search/fetch thành công          |
+| `CACHE_ENABLED`          | `false`           | Bật cache TTL/LRU cho search/fetch thành công                       |
+| `CACHE_BACKEND` / `CACHE_DIR` | `memory` / unset | Cache đĩa khi `CACHE_BACKEND=disk` (bắt buộc `CACHE_DIR`)      |
+| `FETCH_ALLOWED_DOMAINS` / `FETCH_DENIED_DOMAINS` | rỗng | Allow/deny host suffix cho fetch (settings-only) |
 | `SEARCH_CACHE_TTL_SECONDS` | `300`           | TTL cache search khi bật                                              |
 | `FETCH_CACHE_TTL_SECONDS`  | `600`           | TTL cache fetch khi bật                                               |
 | `CACHE_MAX_ENTRIES`      | `256`             | Số entry cache tối đa                                               |

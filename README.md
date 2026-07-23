@@ -250,15 +250,20 @@ websift search "python" --json          # structured JSON for scripts
 websift fetch https://docs.python.org/3/
 websift fetch https://example.com/doc.pdf --max-chars 20000
 websift fetch https://example.com --json
+websift doctor
+websift providers
+websift search "q1" "q2" --json
 ```
 
 | Command                         | Purpose                        |
 | ------------------------------- | ------------------------------ |
 | `websift` / `websift serve` | Run the MCP server             |
-| `websift search QUERY`        | Print search results to stdout |
-| `websift search QUERY --json` | JSON: `ok` / `results` / `error` (exit `1` if not ok) |
+| `websift search QUERY…`       | Print search results (one or more queries) |
+| `websift search QUERY --json` | JSON schema v2 (`ok` / `results` / `error`; batch envelope for multi-query) |
 | `websift fetch URL`           | Print page/PDF text to stdout  |
-| `websift fetch URL --json`    | JSON: `ok` / `content` / `error` (exit `1` if not ok) |
+| `websift fetch URL --json`    | JSON schema v2 (`ok` / `content` / `error`) |
+| `websift doctor`              | Settings / credentials (redacted) / MCP readiness |
+| `websift providers`           | List registered providers and capabilities |
 | `websift --version` / `-V`  | Print package version          |
 | `websift --help` / `-h`     | Show help                      |
 
@@ -465,6 +470,8 @@ The Python programming language...
 | `SEARCH_CACHE_TTL_SECONDS`  | `300`             | Search cache TTL when enabled                                                   |
 | `FETCH_CACHE_TTL_SECONDS`   | `600`             | Fetch cache TTL when enabled                                                    |
 | `CACHE_MAX_ENTRIES`         | `256`             | Max cache entries                                                               |
+| `CACHE_BACKEND` / `CACHE_DIR` | `memory` / unset | Disk cache when `CACHE_BACKEND=disk` (requires `CACHE_DIR`) |
+| `FETCH_ALLOWED_DOMAINS` / `FETCH_DENIED_DOMAINS` | empty | Host suffix allow/deny for fetch |
 | `CACHE_MAX_BYTES`           | `33554432`        | Approx max cache payload bytes                                                  |
 
 ### Search providers

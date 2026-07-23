@@ -16,7 +16,7 @@ def test_version_is_semver_like():
 
 
 def test_version_is_current_release():
-    assert websift.__version__ == "1.2.0"
+    assert websift.__version__ == "1.3.0"
 
 
 def test_distribution_version_matches_package_when_installed():

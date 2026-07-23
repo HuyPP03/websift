@@ -74,6 +74,8 @@ class FetchContext:
     pdf_max_chars: int = PDF_MAX_CHARS
     allow_http: bool = True
     allowed_ports: frozenset[int] = frozenset()
+    allowed_domains: frozenset[str] = frozenset()
+    denied_domains: frozenset[str] = frozenset()
     max_page_chars: int = MAX_PAGE_CHARS
     min_main_content_chars: int = MIN_MAIN_CONTENT_CHARS
     include_links: bool = True
@@ -313,6 +315,8 @@ class BaseProvider:
             url,
             allow_http=ctx.allow_http,
             allowed_ports=ports if ports else None,
+            allowed_domains=ctx.allowed_domains or None,
+            denied_domains=ctx.denied_domains or None,
         )
         if ok:
             return None
@@ -350,6 +354,8 @@ class BaseProvider:
             "max_redirects": self._fetch_context.max_redirects,
             "allow_http": self._fetch_context.allow_http,
             "allowed_ports": ports if ports else None,
+            "allowed_domains": self._fetch_context.allowed_domains or None,
+            "denied_domains": self._fetch_context.denied_domains or None,
         }
 
     def _extraction_kwargs(self) -> dict[str, Any]:

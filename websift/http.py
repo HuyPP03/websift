@@ -315,6 +315,8 @@ def fetch_raw(
     max_redirects: int = MAX_REDIRECTS,
     allow_http: bool = True,
     allowed_ports: frozenset[int] | set[int] | None = None,
+    allowed_domains: frozenset[str] | set[str] | None = None,
+    denied_domains: frozenset[str] | set[str] | None = None,
     pdf_semaphore=None,
 ) -> FetchResult:
     """Fetch URL with SSRF protection, DNS pinning, redirect following, body limits.
@@ -325,7 +327,13 @@ def fetch_raw(
     requested = str(url).strip() if url is not None else ""
     redirect_limit = max(0, int(max_redirects))
 
-    ok, reason, validated = validate_http_url(url, allow_http=allow_http, allowed_ports=allowed_ports)
+    ok, reason, validated = validate_http_url(
+        url,
+        allow_http=allow_http,
+        allowed_ports=allowed_ports,
+        allowed_domains=allowed_domains,
+        denied_domains=denied_domains,
+    )
     if not ok or validated is None:
         return FetchResult.failure(requested or str(url), reason, ErrorCategory.BLOCKED)
 
@@ -417,7 +425,11 @@ def fetch_raw(
 
                     next_url = urljoin(current_url, location)
                     ok_u, reason_u, vnext = validate_http_url(
-                        next_url, allow_http=allow_http, allowed_ports=allowed_ports
+                        next_url,
+                        allow_http=allow_http,
+                        allowed_ports=allowed_ports,
+                        allowed_domains=allowed_domains,
+                        denied_domains=denied_domains,
                     )
                     if not ok_u or vnext is None:
                         return _fail(

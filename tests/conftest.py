@@ -143,8 +143,21 @@ def allow_loopback_fetch(monkeypatch: pytest.MonkeyPatch, http_server):
     from websift.security import resolve_host as real_resolve
     from websift.security import validate_http_url as real_validate
 
-    def _validate(url: str, *, allow_http: bool = True, allowed_ports=None):
-        ok, reason, validated = real_validate(url, allow_http=allow_http, allowed_ports=allowed_ports)
+    def _validate(
+        url: str,
+        *,
+        allow_http: bool = True,
+        allowed_ports=None,
+        allowed_domains=None,
+        denied_domains=None,
+    ):
+        ok, reason, validated = real_validate(
+            url,
+            allow_http=allow_http,
+            allowed_ports=allowed_ports,
+            allowed_domains=allowed_domains,
+            denied_domains=denied_domains,
+        )
         if ok:
             return ok, reason, validated
         parsed = urlparse(str(url).strip())
@@ -161,6 +174,12 @@ def allow_loopback_fetch(monkeypatch: pytest.MonkeyPatch, http_server):
             eff = port if port is not None else (443 if parsed.scheme == "https" else 80)
             if allowed_ports is not None and len(allowed_ports) > 0 and eff not in allowed_ports:
                 return False, f"Blocked: port {eff} is not in FETCH_ALLOWED_PORTS.", None
+            # Domain policy still applies for loopback hosts when configured.
+            from websift.security import check_domain_policy
+
+            ok_d, reason_d = check_domain_policy(host, allowed_domains=allowed_domains, denied_domains=denied_domains)
+            if not ok_d:
+                return False, reason_d, None
             return (
                 True,
                 "",

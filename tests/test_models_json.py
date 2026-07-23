@@ -23,6 +23,7 @@ def test_search_response_to_dict_ok():
         results=(SearchResult(title="T", url="https://x", snippet="S"),),
     )
     d = resp.to_dict()
+    assert d["schema_version"] == 2
     assert d["ok"] is True
     assert d["query"] == "q"
     assert d["max_results"] == 3
@@ -55,6 +56,7 @@ def test_fetch_result_to_dict_ok():
         truncated=True,
     )
     d = r.to_dict()
+    assert d["schema_version"] == 2
     assert d["ok"] is True
     assert d["url"] == "https://example.com"
     assert d["final_url"] == "https://example.com/"

@@ -146,6 +146,8 @@ def _fetch_context_from_settings(settings: AppSettings) -> FetchContext:
         pdf_max_chars=int(f.pdf_max_chars),
         allow_http=bool(f.allow_http),
         allowed_ports=frozenset(f.allowed_ports or ()),
+        allowed_domains=frozenset(getattr(f, "allowed_domains", ()) or ()),
+        denied_domains=frozenset(getattr(f, "denied_domains", ()) or ()),
         max_page_chars=int(e.max_page_chars),
         min_main_content_chars=int(e.min_main_content_chars),
         include_links=bool(e.include_links),
@@ -171,6 +173,8 @@ def _legacy_fetch_context(
         pdf_max_chars=PDF_MAX_CHARS,
         allow_http=True,
         allowed_ports=frozenset(),
+        allowed_domains=frozenset(),
+        denied_domains=frozenset(),
         max_page_chars=max_page_chars,
         min_main_content_chars=MIN_MAIN_CONTENT_CHARS,
         include_links=True,
@@ -325,8 +329,8 @@ class WebSearchClient:
             self._init_cache(None)
 
     def _init_cache(self, cache_settings) -> None:
-        """Wire opt-in in-memory cache (disabled unless CacheSettings.enabled)."""
-        from websift.cache import TtlLruCache
+        """Wire opt-in cache (memory or disk; disabled unless CacheSettings.enabled)."""
+        from websift.cache import DiskTtlCache, TtlLruCache
         from websift.settings import CacheSettings
 
         if not isinstance(cache_settings, CacheSettings) or not cache_settings.enabled:
@@ -334,10 +338,21 @@ class WebSearchClient:
             self._search_ttl = 0.0
             self._fetch_ttl = 0.0
             return
-        self._cache = TtlLruCache(
-            max_entries=cache_settings.max_entries,
-            max_bytes=cache_settings.max_bytes,
-        )
+        backend = (cache_settings.backend or "memory").strip().lower()
+        if backend == "disk":
+            directory = (cache_settings.directory or "").strip()
+            if not directory:
+                raise ValueError("CACHE_DIR is required when CACHE_BACKEND=disk")
+            self._cache = DiskTtlCache(
+                directory,
+                max_entries=cache_settings.max_entries,
+                max_bytes=cache_settings.max_bytes,
+            )
+        else:
+            self._cache = TtlLruCache(
+                max_entries=cache_settings.max_entries,
+                max_bytes=cache_settings.max_bytes,
+            )
         self._search_ttl = float(cache_settings.search_ttl_seconds)
         self._fetch_ttl = float(cache_settings.fetch_ttl_seconds)
 
@@ -346,6 +361,46 @@ class WebSearchClient:
 
     def fetch(self, url: str) -> str:
         return format_fetch_result(self.fetch_structured(url))
+
+    def search_many(
+        self,
+        queries: Sequence[str],
+        *,
+        max_workers: int | None = None,
+    ) -> list[SearchResponse]:
+        """Run multiple searches concurrently (thread pool; order preserved)."""
+        items = [str(q) if q is not None else "" for q in (queries or ())]
+        if not items:
+            return []
+        if len(items) == 1:
+            return [self.search_structured(items[0])]
+
+        workers = max_workers
+        if workers is None:
+            if self._settings is not None:
+                workers = int(self._settings.concurrency.search_max)
+            else:
+                workers = 8
+        workers = max(1, min(int(workers), len(items)))
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        results: list[SearchResponse | None] = [None] * len(items)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            future_map = {pool.submit(self.search_structured, q): i for i, q in enumerate(items)}
+            for fut in as_completed(future_map):
+                idx = future_map[fut]
+                results[idx] = fut.result()
+        return [r for r in results if r is not None]
+
+    def search_many_text(
+        self,
+        queries: Sequence[str],
+        *,
+        max_workers: int | None = None,
+    ) -> list[str]:
+        """Like ``search_many`` but formats each response as the public string API."""
+        return [format_search_response(r) for r in self.search_many(queries, max_workers=max_workers)]
 
     async def asearch(self, query: str) -> str:
         """Async search — runs the sync provider path in a worker thread."""
@@ -362,6 +417,15 @@ class WebSearchClient:
     async def afetch_structured(self, url: str) -> FetchResult:
         """Async structured fetch (same shape as ``fetch_structured``)."""
         return await asyncio.to_thread(self.fetch_structured, url)
+
+    async def asearch_many(
+        self,
+        queries: Sequence[str],
+        *,
+        max_workers: int | None = None,
+    ) -> list[SearchResponse]:
+        """Async multi-query search (offloads ``search_many`` to a worker thread)."""
+        return await asyncio.to_thread(self.search_many, queries, max_workers=max_workers)
 
     def search_structured(self, query: str) -> SearchResponse:
         """Internal structured search; public ``search()`` formats this to ``str``."""

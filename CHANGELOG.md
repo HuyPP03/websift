@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-07-23
+
+### Added
+
+- CLI `websift doctor` — install/settings/credentials (redacted) / MCP readiness checks; `--json` report.
+- CLI `websift providers` — list allowlisted providers and capabilities; `--json` report.
+- JSON **schema v2** for `--json` / `to_dict()`: `schema_version`, `filters`, `result_count` (search), stable error object.
+- Multi-query search: `WebSearchClient.search_many` / `asearch_many` and CLI `websift search q1 q2 …` (concurrent; order preserved).
+- Fetch domain policy: `FETCH_ALLOWED_DOMAINS` / `FETCH_DENIED_DOMAINS` (host suffix allow/deny, settings-only).
+- Optional **disk** cache: `CACHE_BACKEND=disk` + `CACHE_DIR` (stdlib JSON files, TTL/LRU index).
+
+### Changed
+
+- Search CLI accepts one or more queries (`nargs=+`); multiple queries emit a batch envelope when `--json`.
+
 ## [1.2.0] - 2026-07-23
 
 ### Added

@@ -8,8 +8,11 @@ Examples::
     websift serve --host 0.0.0.0 --port 9000
     websift search "python 3.12 features"
     websift search "python" --json
+    websift search "q1" "q2" --json
     websift fetch https://docs.python.org/3/
     websift fetch https://example.com --json
+    websift doctor
+    websift providers
 """
 
 from __future__ import annotations
@@ -22,6 +25,8 @@ from typing import Sequence
 
 from websift import __version__
 from websift.client import WebSearchClient
+from websift.doctor import doctor_report, providers_report
+from websift.models import batch_search_to_dict
 from websift.server import create_server
 from websift.settings import AppSettings, SettingsError
 
@@ -58,10 +63,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     search = sub.add_parser(
         "search",
-        help="Run a one-shot web search and print results",
+        help="Run one or more web searches and print results",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    search.add_argument("query", help="Search query string")
+    search.add_argument(
+        "query",
+        nargs="+",
+        help="Search query string(s); multiple queries run as a concurrent batch",
+    )
     search.add_argument(
         "-n",
         "--max-results",
@@ -83,7 +92,13 @@ def _build_parser() -> argparse.ArgumentParser:
     search.add_argument(
         "--json",
         action="store_true",
-        help="Print structured JSON (ok/results/error) for scripting",
+        help="Print structured JSON schema v2 (ok/results/error) for scripting",
+    )
+    search.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Max concurrent workers for multi-query batch (default: SEARCH_MAX_CONCURRENCY)",
     )
     search.set_defaults(_handler="search")
 
@@ -109,9 +124,25 @@ def _build_parser() -> argparse.ArgumentParser:
     fetch.add_argument(
         "--json",
         action="store_true",
-        help="Print structured JSON (ok/content/error) for scripting",
+        help="Print structured JSON schema v2 (ok/content/error) for scripting",
     )
     fetch.set_defaults(_handler="fetch")
+
+    doctor = sub.add_parser(
+        "doctor",
+        help="Check install, settings, credentials (no secrets printed), and MCP readiness",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    doctor.add_argument("--json", action="store_true", help="Print JSON report")
+    doctor.set_defaults(_handler="doctor")
+
+    providers = sub.add_parser(
+        "providers",
+        help="List registered search providers and capabilities",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    providers.add_argument("--json", action="store_true", help="Print JSON list")
+    providers.set_defaults(_handler="providers")
 
     return parser
 
@@ -269,12 +300,31 @@ def cmd_search(args: argparse.Namespace) -> int:
     except SettingsError as e:
         print(f"websift: configuration error: {e}", file=sys.stderr)
         return 2
-    if getattr(args, "json", False):
-        response = client.search_structured(args.query)
-        print(json.dumps(response.to_dict(), ensure_ascii=False))
-        return 0 if response.ok else 1
-    print(client.search(args.query))
-    return 0
+
+    queries = list(args.query)
+    as_json = bool(getattr(args, "json", False))
+    workers = getattr(args, "workers", None)
+
+    if len(queries) == 1:
+        if as_json:
+            response = client.search_structured(queries[0])
+            print(json.dumps(response.to_dict(), ensure_ascii=False))
+            return 0 if response.ok else 1
+        print(client.search(queries[0]))
+        return 0
+
+    responses = client.search_many(queries, max_workers=workers)
+    if as_json:
+        print(json.dumps(batch_search_to_dict(responses), ensure_ascii=False))
+        return 0 if all(r.ok for r in responses) else 1
+    from websift.client import format_search_response
+
+    for i, (q, resp) in enumerate(zip(queries, responses)):
+        if i:
+            print("\n" + "=" * 40 + "\n")
+        print(f"# query: {q}\n")
+        print(format_search_response(resp))
+    return 0 if all(r.ok for r in responses) else 1
 
 
 def cmd_fetch(args: argparse.Namespace) -> int:
@@ -295,19 +345,31 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    code, text = doctor_report(as_json=bool(getattr(args, "json", False)))
+    print(text)
+    return code
+
+
+def cmd_providers(args: argparse.Namespace) -> int:
+    code, text = providers_report(as_json=bool(getattr(args, "json", False)))
+    print(text)
+    return code
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     """Console entry point. ``websift`` with no args starts the MCP server."""
     argv_list = list(sys.argv[1:] if argv is None else argv)
     parser = _build_parser()
+
+    known = {"serve", "search", "fetch", "doctor", "providers", "-h", "--help", "-V", "--version"}
 
     # Backward compatible: bare `websift` → serve (same as pre-CLI behavior).
     if not argv_list:
         argv_list = ["serve"]
     # Allow `websift --host …` without explicit serve subcommand when first
     # token looks like a global/serve option (not a known subcommand / help).
-    elif argv_list[0] not in {"serve", "search", "fetch", "-h", "--help", "-V", "--version"} and (
-        argv_list[0].startswith("-")
-    ):
+    elif argv_list[0] not in known and argv_list[0].startswith("-"):
         argv_list = ["serve", *argv_list]
 
     args = parser.parse_args(argv_list)
@@ -318,6 +380,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise SystemExit(cmd_search(args))
     if handler == "fetch":
         raise SystemExit(cmd_fetch(args))
+    if handler == "doctor":
+        raise SystemExit(cmd_doctor(args))
+    if handler == "providers":
+        raise SystemExit(cmd_providers(args))
     parser.print_help()
     raise SystemExit(0)
 

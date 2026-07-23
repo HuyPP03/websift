@@ -270,6 +270,10 @@ class FetchSettings:
     allow_http: bool = True
     # Empty frozenset = any port 1..65535 (subject to URL validation).
     allowed_ports: frozenset[int] = frozenset()
+    # Empty = no host allowlist (all non-denied hosts OK). Non-empty = suffix allowlist.
+    allowed_domains: frozenset[str] = frozenset()
+    # Host suffix denylist (checked before allowlist).
+    denied_domains: frozenset[str] = frozenset()
     # When True (default), Tavily/Exa may use paid exact-URL extraction for fetch.
     native_fetch: bool = True
 
@@ -293,6 +297,8 @@ class ConcurrencySettings:
 @dataclass(frozen=True)
 class CacheSettings:
     enabled: bool = False
+    backend: str = "memory"  # memory | disk
+    directory: str | None = None  # required when backend=disk
     search_ttl_seconds: int = 300
     fetch_ttl_seconds: int = 600
     max_entries: int = 256
@@ -406,6 +412,16 @@ class AppSettings:
                 f"Invalid LOG_LEVEL {self.logging.level!r}",
                 code="invalid_log_level",
             )
+        if self.cache.backend not in {"memory", "disk"}:
+            raise SettingsError(
+                f"Invalid CACHE_BACKEND {self.cache.backend!r}. Allowed: memory, disk",
+                code="invalid_cache_backend",
+            )
+        if self.cache.enabled and self.cache.backend == "disk" and not (self.cache.directory or "").strip():
+            raise SettingsError(
+                "CACHE_DIR is required when CACHE_ENABLED and CACHE_BACKEND=disk",
+                code="missing_cache_dir",
+            )
         if self.concurrency.search_max < 1 or self.concurrency.fetch_max < 1 or self.concurrency.pdf_max < 1:
             raise SettingsError("Concurrency limits must be >= 1", code="invalid_concurrency")
         name = (self.provider.name or "").strip().lower()
@@ -516,6 +532,10 @@ class AppSettings:
                 pdf_max_chars=_get_int(env, "PDF_MAX_CHARS", PDF_MAX_CHARS, min_value=1),
                 allow_http=_get_bool(env, "FETCH_ALLOW_HTTP", True),
                 allowed_ports=_parse_ports(_get_optional_str(env, "FETCH_ALLOWED_PORTS"), key="FETCH_ALLOWED_PORTS"),
+                allowed_domains=frozenset(
+                    d.lower() for d in _parse_csv(_get_optional_str(env, "FETCH_ALLOWED_DOMAINS"))
+                ),
+                denied_domains=frozenset(d.lower() for d in _parse_csv(_get_optional_str(env, "FETCH_DENIED_DOMAINS"))),
                 native_fetch=_get_bool(env, "PROVIDER_NATIVE_FETCH", True),
             ),
             extraction=ExtractionSettings(
@@ -534,6 +554,8 @@ class AppSettings:
             ),
             cache=CacheSettings(
                 enabled=_get_bool(env, "CACHE_ENABLED", False),
+                backend=_get_str(env, "CACHE_BACKEND", "memory").strip().lower() or "memory",
+                directory=_get_optional_str(env, "CACHE_DIR"),
                 search_ttl_seconds=_get_int(env, "SEARCH_CACHE_TTL_SECONDS", 300, min_value=0),
                 fetch_ttl_seconds=_get_int(env, "FETCH_CACHE_TTL_SECONDS", 600, min_value=0),
                 max_entries=_get_int(env, "CACHE_MAX_ENTRIES", 256, min_value=1),

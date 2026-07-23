@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
+
+# Stable CLI/library JSON envelope version (``to_dict()``).
+JSON_SCHEMA_VERSION = 2
 
 
 class ErrorCategory:
@@ -55,6 +59,16 @@ class SearchResult:
             out["source"] = self.source
         return out
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SearchResult:
+        return cls(
+            title=str(data.get("title", "") or ""),
+            url=str(data.get("url", "") or ""),
+            snippet=str(data.get("snippet", "") or ""),
+            rank=data.get("rank"),
+            source=data.get("source"),
+        )
+
 
 @dataclass(frozen=True)
 class SearchResponse:
@@ -70,12 +84,19 @@ class SearchResponse:
         return self.error_category is None
 
     def to_dict(self) -> dict:
-        """JSON-serializable payload for CLI ``--json`` and scripting."""
+        """JSON-serializable payload for CLI ``--json`` and scripting (schema v2)."""
         return {
+            "schema_version": JSON_SCHEMA_VERSION,
             "ok": self.ok,
             "query": self.request.query,
             "max_results": self.request.max_results,
+            "filters": {
+                "safe_search": self.request.safe_search,
+                "region": self.request.region,
+                "time_range": self.request.time_range,
+            },
             "results": [r.to_dict() for r in self.results],
+            "result_count": len(self.results),
             "error": (
                 None
                 if self.ok
@@ -85,6 +106,39 @@ class SearchResponse:
                 }
             ),
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SearchResponse:
+        query = str(data.get("query", "") or "")
+        max_results = int(data.get("max_results") or 5)
+        filters = data.get("filters") if isinstance(data.get("filters"), dict) else {}
+        request = SearchRequest(
+            query=query,
+            max_results=max_results,
+            safe_search=filters.get("safe_search"),
+            region=filters.get("region"),
+            time_range=filters.get("time_range"),
+        )
+        rows = data.get("results") or []
+        results = tuple(SearchResult.from_dict(r) for r in rows if isinstance(r, dict))
+        err = data.get("error") if isinstance(data.get("error"), dict) else None
+        return cls(
+            request=request,
+            results=results,
+            error_category=(err or {}).get("category"),
+            error_message=(err or {}).get("message"),
+        )
+
+
+def batch_search_to_dict(responses: list[SearchResponse] | tuple[SearchResponse, ...]) -> dict:
+    """Envelope for multi-query search JSON (schema v2)."""
+    items = [r.to_dict() for r in responses]
+    return {
+        "schema_version": JSON_SCHEMA_VERSION,
+        "ok": all(bool(item.get("ok")) for item in items) if items else True,
+        "count": len(items),
+        "items": items,
+    }
 
 
 @dataclass(frozen=True)
@@ -108,8 +162,9 @@ class FetchResult:
         return self.error_category is None
 
     def to_dict(self) -> dict:
-        """JSON-serializable payload for CLI ``--json`` and scripting."""
+        """JSON-serializable payload for CLI ``--json`` and scripting (schema v2)."""
         return {
+            "schema_version": JSON_SCHEMA_VERSION,
             "ok": self.ok,
             "url": self.requested_url,
             "final_url": self.final_url or self.requested_url,
@@ -129,6 +184,23 @@ class FetchResult:
                 }
             ),
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> FetchResult:
+        err = data.get("error") if isinstance(data.get("error"), dict) else None
+        return cls(
+            requested_url=str(data.get("url", "") or data.get("requested_url", "") or ""),
+            final_url=str(data.get("final_url", "") or ""),
+            content=str(data.get("content", "") or ""),
+            content_type=str(data.get("content_type", "") or ""),
+            status_code=data.get("status_code"),
+            bytes_read=int(data.get("bytes_read") or 0),
+            redirect_count=int(data.get("redirect_count") or 0),
+            truncated=bool(data.get("truncated")),
+            overflow=bool(data.get("overflow")),
+            error_category=(err or {}).get("category"),
+            error_message=(err or {}).get("message"),
+        )
 
     @classmethod
     def failure(
