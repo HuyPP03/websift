@@ -56,7 +56,7 @@ from websift.providers.registry import create_provider, get_default_provider
 from websift.providers.searxng import SearxngProviderConfig
 from websift.providers.serper import SerperProviderConfig
 from websift.providers.tavily import TavilyProviderConfig
-from websift.settings import AppSettings, ProviderEndpoint, ProviderSettings
+from websift.settings import AppSettings, BrowserSettings, ProviderEndpoint, ProviderSettings
 
 # Backward-compatible alias for tests/docs that import the old name.
 _GITHUB_README_HEADERS = GITHUB_README_HEADERS
@@ -334,7 +334,7 @@ class WebSearchClient:
             self._init_fetch_orchestrator(backend="auto")
             self._init_cache(None)
 
-    def _get_browser_settings(self) -> "BrowserSettings | None":
+    def _get_browser_settings(self) -> BrowserSettings | None:
         """Return browser settings from AppSettings or env (legacy path fallback)."""
         if self._settings is not None:
             if self._settings.browser.endpoint:
@@ -346,12 +346,15 @@ class WebSearchClient:
         endpoint = os.environ.get("BROWSER_ENDPOINT", "").strip()
         if not endpoint:
             return None
-        from websift.settings import BrowserSettings
-
         return BrowserSettings(
             endpoint=endpoint,
             bearer_token=os.environ.get("BROWSER_TOKEN", "").strip() or None,
-            allow_insecure_endpoint=os.environ.get("BROWSER_ALLOW_INSECURE_ENDPOINT", "").lower() in ("true", "1", "yes"),
+            allow_insecure_endpoint=(
+                os.environ.get("BROWSER_ALLOW_INSECURE_ENDPOINT", "")
+                .lower()
+                .strip()
+                in ("true", "1", "yes")
+            ),
             timeout_seconds=float(os.environ.get("BROWSER_TIMEOUT_SECONDS", "45")),
             post_load_wait_ms=int(os.environ.get("BROWSER_POST_LOAD_WAIT_MS", "500")),
             max_html_bytes=int(os.environ.get("BROWSER_MAX_HTML_BYTES", str(5 * 1024 * 1024))),

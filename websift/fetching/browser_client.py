@@ -77,9 +77,15 @@ class RemoteBrowserBackend:
         # browsers don't block the entire orchestrator; read uses the full deadline
         # since rendering legitimately takes time once connected.
         read_timeout = max(settings.timeout_seconds - _CONNECT_TIMEOUT, 1.0)
+        timeout = self._httpx.Timeout(
+            connect=_CONNECT_TIMEOUT,
+            read=read_timeout,
+            write=_CONNECT_TIMEOUT,
+            pool=_CONNECT_TIMEOUT,
+        )
         self._client = self._httpx.Client(
             headers=headers,
-            timeout=self._httpx.Timeout(connect=_CONNECT_TIMEOUT, read=read_timeout, write=_CONNECT_TIMEOUT, pool=_CONNECT_TIMEOUT),
+            timeout=timeout,
             follow_redirects=False,
         )
         self._semaphore = threading.BoundedSemaphore(settings.max_concurrency)
