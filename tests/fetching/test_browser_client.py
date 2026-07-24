@@ -278,9 +278,7 @@ def test_read_timeout_does_not_open_circuit(fake_httpx):
 
 
 def test_token_redacted_in_connect_error(fake_httpx):
-    FakeClient.raise_exception = fake_httpx.ConnectError(
-        "connection refused: Bearer secret leaked in logs"
-    )
+    FakeClient.raise_exception = fake_httpx.ConnectError("connection refused: Bearer secret leaked in logs")
     result = make_backend(fake_httpx).fetch("https://example.com")
     assert not result.ok
     assert "secret" not in result.error_message

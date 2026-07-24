@@ -107,9 +107,10 @@ class RemoteBrowserBackend:
         if not self._circuit_open:
             return True
         # Auto-half-open after reset period for a probe
-        if self._last_connect_failure_time is not None and (
-            time.monotonic() - self._last_connect_failure_time
-        ) >= _CIRCUIT_RESET_AFTER:
+        if (
+            self._last_connect_failure_time is not None
+            and (time.monotonic() - self._last_connect_failure_time) >= _CIRCUIT_RESET_AFTER
+        ):
             return True  # allow one probe request
         return False
 
@@ -121,8 +122,7 @@ class RemoteBrowserBackend:
             if not self._circuit_open:
                 self._circuit_open = True
                 _log.warning(
-                    "Remote browser circuit breaker opened after %d consecutive "
-                    "connect failures to %s",
+                    "Remote browser circuit breaker opened after %d consecutive connect failures to %s",
                     self._consecutive_connect_failures,
                     self._render_url,
                 )

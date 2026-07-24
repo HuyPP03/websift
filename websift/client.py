@@ -350,10 +350,7 @@ class WebSearchClient:
             endpoint=endpoint,
             bearer_token=os.environ.get("BROWSER_TOKEN", "").strip() or None,
             allow_insecure_endpoint=(
-                os.environ.get("BROWSER_ALLOW_INSECURE_ENDPOINT", "")
-                .lower()
-                .strip()
-                in ("true", "1", "yes")
+                os.environ.get("BROWSER_ALLOW_INSECURE_ENDPOINT", "").lower().strip() in ("true", "1", "yes")
             ),
             timeout_seconds=float(os.environ.get("BROWSER_TIMEOUT_SECONDS", "45")),
             post_load_wait_ms=int(os.environ.get("BROWSER_POST_LOAD_WAIT_MS", "500")),

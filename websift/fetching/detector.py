@@ -12,7 +12,7 @@ _MIN_RAW_HTML_FOR_EMPTY_CHECK = 500  # raw HTML bytes to consider for JS-rendere
 _MIN_EXTRACTED_CHARS = 50  # extracted text chars below which page is considered empty
 _MODULE_SCRIPT_RE = re.compile(r'<script[^>]+type\s*=\s*["\']module["\']', re.IGNORECASE)
 _SPA_ROOT_RE = re.compile(
-    r"<div[^>]+id\s*=\s*[\"'](?:root|__nuxt|__app|app|___loader)[\"']" r'[^>]*/?\s*>',
+    r"<div[^>]+id\s*=\s*[\"'](?:root|__nuxt|__app|app|___loader)[\"']" r"[^>]*/?\s*>",
     re.IGNORECASE,
 )
 

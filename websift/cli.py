@@ -35,21 +35,21 @@ from websift.settings import AppSettings, SettingsError
 # ── Color helpers (ANSI, auto-disabled when stdout is not a TTY) ──────────
 _USE_COLOR = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
 
-_R    = "\033[0m"
+_R = "\033[0m"
 _BOLD = "\033[1m"
 
 # Green palette — fade sáng → đậm theo từng hàng logo
-_G1 = "\033[38;5;231m"   # #f0fff4  trắng ngà
-_G2 = "\033[38;5;157m"   # #b7f5cb  xanh mint nhạt
-_G3 = "\033[38;5;120m"   # #6ee898  xanh lá tươi
-_G4 = "\033[38;5;42m"    # #2dd468  xanh lá chính
-_G5 = "\033[38;5;35m"    # #1aad4e  xanh trung
-_G6 = "\033[38;5;28m"    # #0d7a35  xanh đậm
+_G1 = "\033[38;5;231m"  # #f0fff4  trắng ngà
+_G2 = "\033[38;5;157m"  # #b7f5cb  xanh mint nhạt
+_G3 = "\033[38;5;120m"  # #6ee898  xanh lá tươi
+_G4 = "\033[38;5;42m"  # #2dd468  xanh lá chính
+_G5 = "\033[38;5;35m"  # #1aad4e  xanh trung
+_G6 = "\033[38;5;28m"  # #0d7a35  xanh đậm
 
-_WHITE  = "\033[97m"
+_WHITE = "\033[97m"
 _YELLOW = "\033[33m"
-_GRAY   = "\033[90m"
-_DIM_G  = "\033[38;5;238m"
+_GRAY = "\033[90m"
+_DIM_G = "\033[38;5;238m"
 
 _LOGO = [
     r"██╗    ██╗███████╗██████╗ ███████╗██╗███████╗████████╗",
@@ -61,9 +61,9 @@ _LOGO = [
 ]
 _LOGO_COLORS = [_G1, _G2, _G3, _G4, _G5, _G6]
 
-_BOX_BORDER = "\033[38;5;22m"   # xanh rất đậm cho ╔══╗
-_BOX_TEXT   = "\033[38;5;120m"  # xanh tươi cho subtitle
-_READY_CLR  = "\033[38;5;42m"   # xanh lá chính cho ◈ Ready
+_BOX_BORDER = "\033[38;5;22m"  # xanh rất đậm cho ╔══╗
+_BOX_TEXT = "\033[38;5;120m"  # xanh tươi cho subtitle
+_READY_CLR = "\033[38;5;42m"  # xanh lá chính cho ◈ Ready
 
 _SEP = "─" * 56
 _SUBTITLE = "self-hosted MCP server — web search + page fetch"
@@ -89,14 +89,14 @@ def _check_browser_health(endpoint: str, timeout: float = 2.0) -> bool:
 
 
 def print_serve_banner(settings: AppSettings) -> None:
-    host      = settings.server.host
-    port      = settings.server.port
+    host = settings.server.host
+    port = settings.server.port
     transport = settings.server.transport
-    provider  = settings.provider.name
+    provider = settings.provider.name
     auth_mode = settings.server.auth_mode
 
     display_host = "localhost" if host == "0.0.0.0" else host
-    endpoint     = "stdio" if transport == "stdio" else f"http://{display_host}:{port}/mcp"
+    endpoint = "stdio" if transport == "stdio" else f"http://{display_host}:{port}/mcp"
     browser_configured = bool((settings.browser.endpoint or "").strip())
 
     # Health check browser endpoint if configured
@@ -115,9 +115,9 @@ def print_serve_banner(settings: AppSettings) -> None:
     # ── Subtitle box ──────────────────────────────────────────────────
     ver_badge = _c(f" v{__version__} ", _BOLD, _G4)
     inner = f"{_c(_SUBTITLE, _BOX_TEXT)}  {ver_badge}"
-    print(f"  {_c('╔' + '═'*54 + '╗', _BOX_BORDER)}")
+    print(f"  {_c('╔' + '═' * 54 + '╗', _BOX_BORDER)}")
     print(f"  {_c('║', _BOX_BORDER)}  {inner}  {_c('║', _BOX_BORDER)}")
-    print(f"  {_c('╚' + '═'*54 + '╝', _BOX_BORDER)}")
+    print(f"  {_c('╚' + '═' * 54 + '╝', _BOX_BORDER)}")
 
     # ── Info table ────────────────────────────────────────────────────
     print(f"  {_c(_SEP, _DIM_G)}")
@@ -410,6 +410,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     # Configure logging early so the shutdown message is visible
     from websift.logging_config import configure_logging
+
     configure_logging(settings.logging)
     _log = logging.getLogger("websift.cli")
 
