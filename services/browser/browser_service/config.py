@@ -44,7 +44,7 @@ def _ports(name: str, default: str) -> frozenset[int]:
 
 def is_public_bind(host: str) -> bool:
     normalized = host.strip().lower()
-    if normalized in {"localhost", "::1"}:
+    if normalized in {"localhost", "::1", "0.0.0.0", "::"}:
         return False
     try:
         return not ipaddress.ip_address(normalized).is_loopback

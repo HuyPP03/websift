@@ -12,7 +12,8 @@ FROM python:3.12-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     BROWSER_HOST=0.0.0.0 \
-    BROWSER_PORT=8790
+    BROWSER_PORT=8790 \
+    BROWSER_TOKEN=websift-dev-token
 RUN groupadd --system browser && useradd --system --gid browser --create-home browser
 COPY --from=builder /wheels /wheels
 RUN mkdir -p /home/browser/.cache && \
