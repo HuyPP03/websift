@@ -6,7 +6,13 @@ import socket
 
 import pytest
 
-from websift.security import is_blocked_ip, is_private_ip, resolve_host, validate_http_url
+from websift.security import (
+    is_blocked_ip,
+    is_private_ip,
+    preflight_fetch_url,
+    resolve_host,
+    validate_http_url,
+)
 
 
 class TestIsBlockedIp:
@@ -149,6 +155,28 @@ class TestValidateHttpUrl:
         ok, _, v = validate_http_url("https://example.com:8443/")
         assert ok and v is not None
         assert v.default_port is False
+
+
+def test_preflight_fetch_url_returns_validated_target_and_pin(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("websift.security.resolve_host", lambda host, port: (True, "", "8.8.8.8"))
+    ok, reason, result = preflight_fetch_url(" https://Example.COM/path ")
+    assert ok is True
+    assert reason == ""
+    assert result is not None
+    assert result.normalized_url == "https://Example.COM/path"
+    assert result.validated.hostname == "example.com"
+    assert result.pinned_ip == "8.8.8.8"
+
+
+def test_preflight_fetch_url_stops_before_dns_on_invalid_url(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        "websift.security.resolve_host",
+        lambda *_args: pytest.fail("DNS must not run for invalid URL"),
+    )
+    ok, reason, result = preflight_fetch_url("file:///etc/passwd")
+    assert ok is False
+    assert "http/https" in reason
+    assert result is None
 
 
 class TestResolveHost:

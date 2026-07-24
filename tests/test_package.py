@@ -16,7 +16,7 @@ def test_version_is_semver_like():
 
 
 def test_version_is_current_release():
-    assert websift.__version__ == "1.3.0"
+    assert websift.__version__ == "2.0.0"
 
 
 def test_distribution_version_matches_package_when_installed():
@@ -110,7 +110,18 @@ def test_optional_provider_extras_declared_when_installed():
     except PackageNotFoundError:
         return
     provides = meta.get_all("Provides-Extra") or []
-    for extra in ("mcp", "searxng", "brave", "tavily", "exa", "serper", "providers", "dev"):
+    for extra in (
+        "mcp",
+        "browser",
+        "mcp-browser",
+        "searxng",
+        "brave",
+        "tavily",
+        "exa",
+        "serper",
+        "providers",
+        "dev",
+    ):
         assert extra in provides, provides
     for name in ("ddgs", "searxng", "brave", "tavily", "exa", "serper"):
         assert is_registered(name)

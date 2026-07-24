@@ -1,6 +1,6 @@
 # websift — Tài liệu tiếng Việt
 
-Thư viện Python nhẹ và MCP server miễn phí, tự host cho truy cập web thời gian thực — tìm kiếm DuckDuckGo + lấy nội dung trang (HTML → Markdown, PDF → text) — với bảo vệ SSRF và DNS pinning. **Không cần API key** cho provider mặc định.
+Thư viện Python nhẹ và MCP server miễn phí, tự host cho truy cập web thời gian thực — tìm kiếm DuckDuckGo + lấy nội dung trang (HTML → Markdown, PDF → text, trang JS-rendered qua browser) — với bảo vệ SSRF, DNS pinning và fallback HTTP-to-browser. **Không cần API key** cho provider mặc định.
 
 ```python
 from websift import WebSearchClient
@@ -88,7 +88,7 @@ MCP (Model Context Protocol) là giao thức chuẩn để kết nối AI agents
 
 - **🐍 Dùng như thư viện Python** — `pip install websift` rồi import trực tiếp vào code. Không cần server, không cần Docker, không cần MCP.
 - **🆓 Miễn phí (mặc định)** — Provider **DDGS** mặc định không cần API key hay đăng ký. DuckDuckGo và các site đích vẫn có thể throttle/block.
-- **🪶 Siêu nhẹ** — Chỉ một tiến trình Python, ~4 thư viện phụ thuộc, chạy trong container Docker nhỏ (`python:3.12-slim` ≈ 150 MB).
+- **🪶 Siêu nhẹ** — Gói base chỉ 3 phụ thuộc. MCP, adapter provider và browser rendering là extra tùy chọn.
 - **🔒 Bảo mật mặc định** — Chống SSRF (global-only IP, multi-answer DNS, không userinfo), DNS pinning + SNI, re-validate redirect, giới hạn body/decompress, kiểm tra content-type.
 - **🌐 Tương thích mọi MCP Client** — Hoạt động với bất kỳ client MCP nào: VS Code, Claude Desktop, Claude Code, Cursor, Windsurf, JetBrains, và các agent tùy chỉnh.
 - **📄 Trích xuất thông minh** — HTML → Markdown qua BeautifulSoup (main-content), PDF → text **chỉ pypdf**, phát hiện file nhị phân, charset BOM → HTTP → meta → UTF-8.
@@ -116,10 +116,11 @@ MCP (Model Context Protocol) là giao thức chuẩn để kết nối AI agents
 | **Cần API Key**            | ✅ Không                  | ❌ Có                                   | ❌ Có                                   | ❌ Có                                   | ❌ Có                                   |
 | **Tự chủ (Self-hosted)**  | ✅ Có                     | ❌ Không                                | ⚠️ Một phần                          | ❌ Không                                | ❌ Không                                |
 | **Tìm kiếm web**          | ✅ DuckDuckGo              | ✅ Độc quyền                          | ❌ (chỉ scrape)                         | ✅ Độc quyền                          | ✅ Brave                                 |
-| **Lấy nội dung web**      | ✅ HTML + PDF              | ✅ Có                                   | ✅ Có (sâu)                            | ✅ Có                                   | ❌ Không                                |
+| **Lấy nội dung web**      | ✅ HTML + PDF + browser    | ✅ Có                                   | ✅ Có (sâu)                            | ✅ Có                                   | ❌ Không                                |
+| **Render JS**              | ✅ extra browser         | ⚠️ Hạn chế                           | ✅ Có                                   | ⚠️ Hạn chế                           | ❌ Không                                |
 | **Chống SSRF**             | ✅ Tích hợp              | ⚠️ Nhà cung cấp quản lý            | ⚠️ Nhà cung cấp quản lý            | ⚠️ Nhà cung cấp quản lý            | ⚠️ Nhà cung cấp quản lý            |
-| **Kích thước container** | ~150 MB                    | N/A (SaaS)                               | ~500 MB+                                 | N/A (SaaS)                               | N/A (SaaS)                               |
-| **Thư viện phụ thuộc**  | 4 gói                     | N/A                                      | Nhiều                                   | N/A                                      | N/A                                      |
+| **Kích thước container** | ~150 MB (base)             | N/A (SaaS)                               | ~500 MB+                                 | N/A (SaaS)                               | N/A (SaaS)                               |
+| **Thư viện phụ thuộc**  | 3 base (+ optional extra) | N/A                                      | Nhiều                                   | N/A                                      | N/A                                      |
 | **Giới hạn tốc độ**    | Upstream DDGS / site đích | Giới hạn nhà cung cấp                | Giới hạn nhà cung cấp                | Giới hạn nhà cung cấp                | Giới hạn nhà cung cấp                |
 | **Quyền riêng tư**       | Tự host + outbound       | ⚠️ Dữ liệu gửi đến nhà cung cấp | ⚠️ Dữ liệu gửi đến nhà cung cấp | ⚠️ Dữ liệu gửi đến nhà cung cấp | ⚠️ Dữ liệu gửi đến nhà cung cấp |
 
@@ -128,7 +129,8 @@ MCP (Model Context Protocol) là giao thức chuẩn để kết nối AI agents
 | Tình huống                                                                     | Khuyến nghị               |
 | -------------------------------------------------------------------------------- | --------------------------- |
 | Muốn truy cập web**miễn phí, không đăng ký** cho AI                | **websift** ✅ |
-| Cần**scrape sâu** (trang render JS, sitemap)                             | Firecrawl                   |
+| Cần**render JS** với tự host                                         | **websift[browser]** ✅ |
+| Cần**scrape sâu** (sitemap, quy mô lớn)                                 | Firecrawl                   |
 | Cần**tìm kiếm ngữ nghĩa** (AI-powered relevance)                      | Exa                         |
 | Muốn tìm kiếm**tối ưu cho agent** (chế độ `extract` của Tavily) | Tavily                      |
 | Muốn**tự host** (vẫn có outbound search/fetch)                   | **websift** ✅ |
@@ -159,7 +161,19 @@ MCP (Model Context Protocol) là giao thức chuẩn để kết nối AI agents
 └────────────┘                     └──────────────────────┘
 ```
 
-Luồng ra ngoài: **search** → provider (mặc định DuckDuckGo qua `ddgs`); **fetch** → URL đích / GitHub API cho README. Secret provider không bao giờ đi theo page-fetch.
+Luồng ra ngoài: **search** → provider (mặc định DuckDuckGo qua `ddgs`); **fetch** → `FetchOrchestrator` routing qua native provider → HTTP → browser (tùy điều kiện). Secret provider không bao giờ đi theo page-fetch.
+
+### Chế độ Fetch Backend
+
+| Chế độ | Luồng | Browser? |
+| ---- | ---- | -------- |
+| `auto` (mặc định) | native provider → HTTP → browser chỉ khi phát hiện challenge/JS-shell | Tùy điều kiện |
+| `http` | HTTP thôi | Không bao giờ |
+| `browser` | Browser trực tiếp | Luôn |
+
+Ở chế độ `auto`, orchestrator chỉ escalate lên browser khi detector tìm thấy bằng chứng cụ thể (marker challenge kiểu Cloudflare hoặc JavaScript-only shell). Các trang thông thường có JavaScript inline không bị escalate. Browser service là một Docker container riêng, tùy chọn.
+
+**Tương thích ngược:** Khi chưa cấu hình browser service, chế độ `auto` (mặc định) hoạt động giống hệt phiên bản trước (v1.x).
 
 ### Cấu trúc module
 
@@ -179,8 +193,17 @@ websift/
 ├── client.py         # façade search/fetch công khai
 ├── provider_http.py  # transport credential cho provider (tách page fetch)
 ├── providers/        # contract SearchProvider, registry, adapter DDGS + khác
-└── server.py         # create_server / ServerApp
-server.py             # entry mỏng → websift.cli:main
+├── server.py         # create_server / ServerApp
+└── fetching/         # Fetch orchestration (nội bộ)
+    ├── backend.py    # FetchBackend protocol + FetchBackendOutcome
+    ├── http.py       # HttpFetchBackend (generic SSRF-safe HTTP)
+    ├── detector.py   # Challenge/JS-shell detection
+    ├── orchestrator.py # FetchOrchestrator (native -> HTTP -> browser)
+    └── browser_client.py # RemoteBrowserBackend (optional httpx client)
+services/browser/     # Standalone Camoufox browser service
+├── browser_service/  # FastAPI app, runtime, proxy, policy
+├── Dockerfile
+└── tests/
 ```
 
 ---
@@ -191,18 +214,40 @@ server.py             # entry mỏng → websift.cli:main
 
 ```bash
 pip install websift
-# MCP server: pip install 'websift[mcp]'
 ```
 
-Vậy là xong — bạn có thể dùng như **thư viện Python** (import trực tiếp) hoặc như **MCP server** (cho AI clients).
+Vậy là xong cho **thư viện Python** và CLI `search` / `fetch`. Để thêm tính năng:
+
+```bash
+pip install 'websift[mcp]'           # MCP server (websift serve)
+pip install 'websift[browser]'       # Remote browser client (JS rendering)
+pip install 'websift[mcp-browser]'   # MCP + browser client
+pip install 'websift[providers]'     # All keyed providers
+```
+
+**Ma trận cài đặt:**
+
+| Extra | Thêm vào | Sử dụng cho |
+| ----- | -------- | ---------- |
+| (base) | ddgs, bs4, pypdf | Library + CLI, HTTP fetch |
+| `[mcp]` | FastMCP | MCP server cho AI clients |
+| `[browser]` | httpx | Remote browser client (cần browser service) |
+| `[mcp-browser]` | cả hai | Full feature set |
+| `[providers]` | all provider adapters | Brave, Tavily, Exa, Serper |
+| `[dev]` | test, lint, build tools | Development |
+
+Extra `[browser]` chỉ cài **HTTP client remote** (httpx). Runtime browser thực sự (Camoufox + Playwright) chạy như Docker container riêng — xem [Browser Service](#browser-service).
 
 ### Tùy chọn 2: Docker Compose
 
 ```bash
-# Clone và khởi động (không bắt buộc file .env)
+# Clone và khởi động (không cần file .env)
 git clone <repo-url>
 cd websift
 docker compose up -d --build
+
+# Với hỗ trợ browser rendering:
+docker compose --profile browser up -d --build
 ```
 
 MCP server sẽ có sẵn tại `http://localhost:8787/mcp`.
@@ -229,6 +274,11 @@ pip install -e ".[dev]"
 # Hoặc chỉ runtime deps (mirror pyproject.toml)
 pip install -r requirements.txt
 pip install -e .
+
+# Extra tùy chọn
+pip install -e ".[mcp]"           # MCP server
+pip install -e ".[browser]"       # Browser client
+pip install -e ".[mcp-browser]"   # Cả hai
 
 # Chạy server
 websift serve
@@ -275,6 +325,7 @@ websift search "q1" "q2" --json
 | `websift search QUERY --json` | JSON schema v2 (`ok` / `results` / `error`; batch khi multi-query) |
 | `websift fetch URL` | In nội dung trang/PDF ra stdout |
 | `websift fetch URL --json` | JSON schema v2 (`ok` / `content` / `error`) |
+| `websift fetch URL --backend {http,browser,auto}` | Kiểm soát chế độ backend fetch |
 | `websift doctor` | Kiểm tra settings / credentials (che secret) / MCP |
 | `websift providers` | Liệt kê provider đã đăng ký và capabilities |
 | `websift --version` / `-V` | In version package |
@@ -355,6 +406,12 @@ client = WebSearchClient(settings=settings)
 
 # Hoặc load từ env
 client = WebSearchClient(settings=AppSettings.from_env())
+
+# Browser rendering cho trang JS-heavy
+from websift.settings import FetchSettings
+client = WebSearchClient(
+    fetch_backend="auto",  # "auto" (mặc định), "http", "browser"
+)
 ```
 
 | Kwarg | Kiểu | Mô tả |
@@ -371,6 +428,7 @@ client = WebSearchClient(settings=AppSettings.from_env())
 | `include_links` / `include_images` | `bool` | Tùy chọn trích xuất HTML |
 | `output_format` | `str` | `markdown` hoặc `text` |
 | `native_fetch` | `bool` | Cho phép Tavily/Exa native extract khi fetch |
+| `fetch_backend` | `str` | `"auto"`, `"http"` hoặc `"browser"` cho chế độ backend fetch |
 | `settings` | `AppSettings` | Cây cấu hình đầy đủ (kwargs nâng cao vẫn overlay khi set) |
 
 **Phù hợp cho:**
@@ -489,6 +547,22 @@ The Python programming language...
 | `FETCH_CACHE_TTL_SECONDS`  | `600`           | TTL cache fetch khi bật                                               |
 | `CACHE_MAX_ENTRIES`      | `256`             | Số entry cache tối đa                                               |
 | `CACHE_MAX_BYTES`        | `33554432`        | Xấp xỉ dung lượng payload cache (byte)                              |
+| `FETCH_ALLOWED_PORTS` / `FETCH_DENIED_PORTS` | rỗng | Port allow/deny cho fetch |
+| `FETCH_BACKEND`             | `auto`            | Backend fetch: `auto`, `http`, hoặc `browser` |
+| `PROVIDER_NATIVE_FETCH`    | `true`           | Tavily/Exa dùng extract/contents cho `web_fetch` (tốn credit)       |
+
+#### Cấu hình Browser
+
+| Biến                                | Mặc định        | Mô tả                                                                       |
+| ------------------------------------- | ------------- | ------------------------------------------------------------------------------- |
+| `BROWSER_ENDPOINT`                    | (rỗng)          | URL browser service, ví dụ `https://browser.internal` (bắt buộc cho chế độ `browser`) |
+| `BROWSER_TOKEN`                       | (rỗng)          | Bearer token cho xác thực browser service                                     |
+| `BROWSER_ALLOW_INSECURE_ENDPOINT`     | `false`       | Cho phép endpoint `http://` (chỉ dùng cho mạng local/tin cậy)                    |
+| `BROWSER_TIMEOUT_SECONDS`            | `60`          | Timeout render browser cho mỗi trang                                            |
+| `BROWSER_POST_LOAD_WAIT_MS`          | `0`           | Chờ thêm sau khi network idle                                                   |
+| `BROWSER_MAX_HTML_BYTES`             | `2097152`     | HTML bytes tối đa trả về từ browser                                            |
+| `BROWSER_MAX_RESPONSE_BYTES`         | `10485760`    | HTTP response bytes tối đa từ browser service                                   |
+| `BROWSER_MAX_CONCURRENCY`            | `4`           | Số request browser đồng thời tối đa                                             |
 
 ### Provider tìm kiếm
 
@@ -507,6 +581,8 @@ Chỉ cấu hình server-wide (`SEARCH_PROVIDER`). Tool MCP không nhận provid
 
 Filter tùy chọn: `SEARCH_SAFE_SEARCH`, `SEARCH_REGION`, `SEARCH_TIME_RANGE`. Fallback opt-in: `SEARCH_FALLBACK_PROVIDERS` (không fallback lỗi config/auth).
 
+`PROVIDER_NATIVE_FETCH=true` (mặc định): Tavily/Exa dùng extract/contents cho `web_fetch` (tốn credit); `false` luôn generic SSRF-safe fetch.
+
 `PROVIDER_NATIVE_FETCH=true` (mặc định): Tavily/Exa dùng extract/contents cho `web_fetch` (tốn credit); `false` luôn generic SSRF-safe fetch. Fallback search **không** áp dụng cho fetch.
 
 ### Giới hạn nội bộ
@@ -517,6 +593,81 @@ Filter tùy chọn: `SEARCH_SAFE_SEARCH`, `SEARCH_REGION`, `SEARCH_TIME_RANGE`. 
 | Kích thước PDF tối đa    | 20 MB     | Giới hạn fetch PDF          |
 | Ký tự đầu ra tối đa    | 128,000   | Số ký tự gửi đến LLM      |
 | Redirect tối đa            | 5         | Giới hạn chuỗi redirect HTTP |
+
+---
+
+## Browser Service
+
+Extra `[browser]` cho phép hỗ trợ trang JS-rendered qua browser service riêng. Điều này giữ cài đặt base nhẹ và cô lập runtime browser.
+
+### Kiến trúc
+
+```
+WebSearchClient ──► FetchOrchestrator ──► HttpFetchBackend (nhanh)
+                                      ──► RemoteBrowserBackend (HTTP, tùy điều kiện)
+                                                                    │
+                                                            ┌───────▼───────┐
+                                                            │  Browser      │
+                                                            │  Service      │
+                                                            │  (Camoufox)   │
+                                                            │  Docker       │
+                                                            └───────────────┘
+```
+
+### Bắt đầu nhanh
+
+```bash
+# Khởi động browser service (Docker Compose)
+docker compose --profile browser up -d --build
+
+# Cấu hình websift kết nối tới browser service
+export BROWSER_ENDPOINT=http://localhost:8790
+
+# Dùng websift — chế độ "auto" chỉ escalate lên browser cho trang challenge/JS-shell
+websift fetch "https://example.com"
+```
+
+### Docker standalone
+
+```bash
+docker run -d --name websift-browser \
+  -p 8790:8790 \
+  -e BROWSER_TOKEN=your-secret-token \
+  -e PROXY_UPSTREAM=http://websift:3128 \
+  websift-browser:latest
+```
+
+### Bảo mật
+
+- **Proxy SSRF-safe:** Tất cả traffic browser đi qua internal forward proxy kiểm tra DNS answer, pin tới global IP, chặn private/link-local destination.
+- **Route interception:** Mỗi navigation, redirect, iframe, script, XHR, WebSocket được validate theo fetch policy trước khi cho phép.
+- **Context cô lập:** Mỗi request render được browser context + page riêng; không chia sẻ cookie/storage giữa requests.
+- **Container hardened:** Non-root, drop capabilities, no-new-privileges, resource/PID limits.
+- **Protocol authentication:** Bearer token bắt buộc khi expose ra ngoài loopback.
+
+### Browser rendering xử lý những gì?
+
+Browser backend render JavaScript và có thể cải thiện kết quả cho:
+- Single-page application (React, Vue, Angular)
+- Trang cần JavaScript để hiển thị nội dung
+- Một số trang challenge tương thích browser
+
+**Browser rendering KHÔNG:**
+- Giải CAPTCHA
+- Đảm bảo vượt Cloudflare/DataDome/anti-bot
+- Xử lý login wall, paywall hay nội dung yêu cầu credential
+
+### Context Manager
+
+Khi dùng browser client, đóng explicit để release HTTP connection pool:
+
+```python
+from websift import WebSearchClient
+
+with WebSearchClient() as client:
+    content = client.fetch("https://example.com")
+# connection pool đóng tự động
+```
 
 ---
 
@@ -802,8 +953,12 @@ websift/
 ├── .github/workflows/      # Matrix build/test + publish PyPI
 ├── README.md               # Tài liệu tiếng Anh
 ├── docs/
-│   └── README.vi.md        # Tài liệu tiếng Việt (tệp này)
+│   ├── README.vi.md        # Tài liệu tiếng Việt (tệp này)
+│   └── GUIDES.md           # Hướng dẫn chi tiết từng bước
 ├── tests/                  # Suite pytest offline (markers: live, provider)
+│   └── fetching/           # Fetch orchestration tests
+├── services/
+│   └── browser/            # Standalone Camoufox browser service
 └── websift/
     ├── __init__.py         # WebSearchClient, AppSettings, __version__
     ├── __main__.py         # python -m websift
@@ -820,7 +975,13 @@ websift/
     ├── client.py           # Façade công khai
     ├── provider_http.py    # Transport credential provider
     ├── providers/          # DDGS + registry
-    └── server.py           # create_server / ServerApp
+    ├── server.py           # create_server / ServerApp
+    └── fetching/           # Fetch orchestration
+        ├── backend.py      # FetchBackend protocol
+        ├── http.py         # HttpFetchBackend
+        ├── detector.py     # Challenge/JS-shell detection
+        ├── orchestrator.py # Native -> HTTP -> browser
+        └── browser_client.py # Remote HTTP browser client
 ```
 
 ### Đặt tên
@@ -853,6 +1014,7 @@ websift serve --port 9000 --transport sse
 # One-shot search / fetch
 websift search "test"
 websift fetch https://example.com
+websift fetch https://example.com --backend browser   # buộc dùng browser
 
 # Thư viện (không cần server)
 python -c "from websift import WebSearchClient; print(WebSearchClient().search('test'))"
@@ -868,11 +1030,32 @@ python -m build
 twine check dist/*
 ```
 
+### Lint, test, build
+
+```bash
+# Lint
+ruff check websift tests
+ruff format --check websift tests
+
+# Offline tests + coverage gate (≥85%)
+python -m pytest --cov=websift --cov-report=term-missing --cov-fail-under=85 -m "not live and not provider"
+
+# Browser service tests (separate venv)
+cd services/browser && python -m venv .venv && source .venv/bin/activate && pip install -e ".[test]" && python -m pytest tests/
+
+# Package
+python -m build
+twine check dist/*
+```
+
 ### Chạy với Docker
 
 ```bash
-# Build và khởi động (không bắt buộc .env)
+# Build và khởi động (không cần .env)
 docker compose up -d --build
+
+# Với hỗ trợ browser:
+docker compose --profile browser up -d --build
 
 # Secret runtime (tùy chọn)
 # docker compose --env-file .env up -d
@@ -903,7 +1086,15 @@ Có, nếu cho phép HTTPS ra ngoài tới search provider và site đích. Truy
 
 ### Hỏi: So với Tavily hay Firecrawl thì sao?
 
-Giải pháp này đơn giản hơn và miễn phí, nhưng không cung cấp render JS, scrape sâu, hay tìm kiếm ngữ nghĩa. Đối với tìm kiếm web cơ bản + lấy nội dung trang, đây là giải pháp thay thế miễn phí tốt. Xem [bảng so sánh](#bảng-so-sánh-chi-tiết) để biết chi tiết.
+Giải pháp này đơn giản hơn và miễn phí, có render JS tùy chọn qua browser service (\`websift[browser]\`). Để scrape quy mô lớn hoặc tìm kiếm ngữ nghĩa, xem Firecrawl hoặc Exa. Xem [bảng so sánh](#bảng-so-sánh-chi-tiết) để biết chi tiết.
+
+### Hỏi: Browser backend giải quyết CAPTCHA hay vượt Cloudflare không?
+
+**Không.** Browser backend render JavaScript và có thể cải thiện kết quả cho một số trang challenge, nhưng không giải CAPTCHA và không đảm bảo vượt Cloudflare/DataDome/anti-bot. Đây là best effort.
+
+### Hỏi: Browser service chạy trong process Python của tôi không?
+
+**Không.** Extra \`[browser]\` chỉ cài HTTP client nhẹ (httpx). Runtime browser thực sự (Camoufox + Playwright) chạy như Docker container riêng. Điều này giữ gói base nhẹ và cô lập process browser.
 
 ### Hỏi: Có thể thêm xác thực không?
 
@@ -983,3 +1174,4 @@ MIT — xem [LICENSE](LICENSE) để biết chi tiết.
 - [Copilot CLI MCP Documentation](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers) — hướng dẫn MCP chính thức của GitHub Copilot CLI
 - [Claude Desktop MCP Documentation](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop) — hướng dẫn MCP chính thức của Claude Desktop
 - [JetBrains MCP Documentation](https://www.jetbrains.com/help/idea/mcp-server.html) — hướng dẫn MCP chính thức của JetBrains
+- [Camoufox](https://github.com/httptoolkit/camoufox) — Firefox-based browser với anti-detection (browser service)

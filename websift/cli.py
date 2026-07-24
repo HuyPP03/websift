@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import signal
 import sys
 from dataclasses import replace
 from typing import Sequence
@@ -29,6 +31,116 @@ from websift.doctor import doctor_report, providers_report
 from websift.models import batch_search_to_dict
 from websift.server import create_server
 from websift.settings import AppSettings, SettingsError
+
+# ── Color helpers (ANSI, auto-disabled when stdout is not a TTY) ──────────
+_USE_COLOR = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
+_R    = "\033[0m"
+_BOLD = "\033[1m"
+
+# Green palette — fade sáng → đậm theo từng hàng logo
+_G1 = "\033[38;5;231m"   # #f0fff4  trắng ngà
+_G2 = "\033[38;5;157m"   # #b7f5cb  xanh mint nhạt
+_G3 = "\033[38;5;120m"   # #6ee898  xanh lá tươi
+_G4 = "\033[38;5;42m"    # #2dd468  xanh lá chính
+_G5 = "\033[38;5;35m"    # #1aad4e  xanh trung
+_G6 = "\033[38;5;28m"    # #0d7a35  xanh đậm
+
+_WHITE  = "\033[97m"
+_YELLOW = "\033[33m"
+_GRAY   = "\033[90m"
+_DIM_G  = "\033[38;5;238m"
+
+_LOGO = [
+    r"██╗    ██╗███████╗██████╗ ███████╗██╗███████╗████████╗",
+    r"██║    ██║██╔════╝██╔══██╗██╔════╝██║██╔════╝╚══██╔══╝",
+    r"██║ █╗ ██║█████╗  ██████╔╝███████╗██║█████╗     ██║   ",
+    r"██║███╗██║██╔══╝  ██╔══██╗╚════██║██║██╔══╝     ██║   ",
+    r"╚███╔███╔╝███████╗██████╔╝███████║██║██║        ██║   ",
+    r" ╚══╝╚══╝ ╚══════╝╚═════╝ ╚══════╝╚═╝╚═╝        ╚═╝   ",
+]
+_LOGO_COLORS = [_G1, _G2, _G3, _G4, _G5, _G6]
+
+_BOX_BORDER = "\033[38;5;22m"   # xanh rất đậm cho ╔══╗
+_BOX_TEXT   = "\033[38;5;120m"  # xanh tươi cho subtitle
+_READY_CLR  = "\033[38;5;42m"   # xanh lá chính cho ◈ Ready
+
+_SEP = "─" * 56
+_SUBTITLE = "self-hosted MCP server — web search + page fetch"
+
+
+def _c(text: str, *codes: str) -> str:
+    if not _USE_COLOR:
+        return text
+    return "".join(codes) + text + _R
+
+
+def _check_browser_health(endpoint: str, timeout: float = 2.0) -> bool:
+    """Quick healthz ping to browser endpoint; returns True if healthy."""
+    import urllib.request
+
+    health = endpoint.rstrip("/") + "/healthz"
+    req = urllib.request.Request(health, method="GET")
+    try:
+        resp = urllib.request.urlopen(req, timeout=timeout)
+        return resp.status == 200
+    except Exception:
+        return False
+
+
+def print_serve_banner(settings: AppSettings) -> None:
+    host      = settings.server.host
+    port      = settings.server.port
+    transport = settings.server.transport
+    provider  = settings.provider.name
+    auth_mode = settings.server.auth_mode
+
+    display_host = "localhost" if host == "0.0.0.0" else host
+    endpoint     = "stdio" if transport == "stdio" else f"http://{display_host}:{port}/mcp"
+    browser_configured = bool((settings.browser.endpoint or "").strip())
+
+    # Health check browser endpoint if configured
+    browser_healthy = False
+    if browser_configured:
+        browser_healthy = _check_browser_health(
+            settings.browser.endpoint,
+            settings.browser.timeout_seconds if settings.browser.timeout_seconds <= 2.0 else 2.0,
+        )
+
+    # ── Logo ─────────────────────────────────────────────────────────
+    print()
+    for line, color in zip(_LOGO, _LOGO_COLORS):
+        print(f"  {_c(line, color)}")
+
+    # ── Subtitle box ──────────────────────────────────────────────────
+    ver_badge = _c(f" v{__version__} ", _BOLD, _G4)
+    inner = f"{_c(_SUBTITLE, _BOX_TEXT)}  {ver_badge}"
+    print(f"  {_c('╔' + '═'*54 + '╗', _BOX_BORDER)}")
+    print(f"  {_c('║', _BOX_BORDER)}  {inner}  {_c('║', _BOX_BORDER)}")
+    print(f"  {_c('╚' + '═'*54 + '╝', _BOX_BORDER)}")
+
+    # ── Info table ────────────────────────────────────────────────────
+    print(f"  {_c(_SEP, _DIM_G)}")
+
+    def row(key: str, val: str, val_clr: str = _WHITE) -> None:
+        print(f"  {_c(key, _BOLD, _G4)}  {_c(val, val_clr)}")
+
+    row("ENDPOINT ", endpoint)
+    row("TRANSPORT", transport)
+    row("PROVIDER ", provider)
+    if auth_mode != "none":
+        row("AUTH     ", auth_mode, _YELLOW)
+    if browser_healthy:
+        row("BROWSER  ", f"enabled  {_c(settings.browser.endpoint, _DIM_G)}", _G3)
+    elif browser_configured:
+        row("BROWSER  ", f"unreachable {_c(settings.browser.endpoint, _DIM_G)}", _YELLOW)
+    else:
+        row("BROWSER  ", "not configured", _GRAY)
+
+    # ── Ready ─────────────────────────────────────────────────────────
+    print(f"  {_c(_SEP, _DIM_G)}")
+    print(f"  {_c('◈ Ready.', _BOLD, _READY_CLR)}")
+    print()
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -122,6 +234,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Fetch timeout in seconds",
     )
     fetch.add_argument(
+        "--backend",
+        choices=("auto", "http", "browser"),
+        default=None,
+        help="Fetch backend (default: env FETCH_BACKEND or auto)",
+    )
+    fetch.add_argument(
         "--json",
         action="store_true",
         help="Print structured JSON schema v2 (ok/content/error) for scripting",
@@ -207,6 +325,7 @@ def _settings_from_env_with_cli(
     log_level: str | None = None,
     search_timeout: float | None = None,
     fetch_timeout: float | None = None,
+    fetch_backend: str | None = None,
     max_page_chars: int | None = None,
 ) -> AppSettings:
     """Load env settings, then apply non-None CLI overrides."""
@@ -242,8 +361,12 @@ def _settings_from_env_with_cli(
         )
 
     fetch = settings.fetch
-    if fetch_timeout is not None:
-        fetch = replace(fetch, timeout_seconds=float(fetch_timeout))
+    if fetch_timeout is not None or fetch_backend is not None:
+        fetch = replace(
+            fetch,
+            timeout_seconds=float(fetch_timeout) if fetch_timeout is not None else fetch.timeout_seconds,
+            backend=fetch_backend if fetch_backend is not None else fetch.backend,
+        )
 
     extraction = settings.extraction
     if max_page_chars is not None:
@@ -281,8 +404,30 @@ def cmd_serve(args: argparse.Namespace) -> int:
         print(f"websift: configuration error: {e}", file=sys.stderr)
         return 2
 
+    # Only print banner for non-stdio transports
+    if settings.server.transport != "stdio":
+        print_serve_banner(settings)
+
+    # Configure logging early so the shutdown message is visible
+    from websift.logging_config import configure_logging
+    configure_logging(settings.logging)
+    _log = logging.getLogger("websift.cli")
+
+    def _graceful_shutdown(signum: int, frame) -> None:
+        sig_name = signal.Signals(signum).name
+        _log.info("Received %s — shutting down gracefully...", sig_name)
+        # Second signal → immediate exit
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+
+    signal.signal(signal.SIGINT, _graceful_shutdown)
+    signal.signal(signal.SIGTERM, _graceful_shutdown)
+
     try:
         create_server(settings).run()
+    except KeyboardInterrupt:
+        _log.info("Shutting down...")
+        return 0
     except ImportError as e:
         print(f"websift: {e}", file=sys.stderr)
         return 2
@@ -331,10 +476,12 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     try:
         settings = _settings_from_env_with_cli(
             fetch_timeout=args.timeout,
+            fetch_backend=args.backend,
             max_page_chars=args.max_page_chars,
         )
+        settings.validate()
         client = WebSearchClient(settings=settings)
-    except SettingsError as e:
+    except (SettingsError, ImportError) as e:
         print(f"websift: configuration error: {e}", file=sys.stderr)
         return 2
     if getattr(args, "json", False):

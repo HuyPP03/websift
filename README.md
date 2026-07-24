@@ -1,6 +1,6 @@
 # websift
 
-A lightweight **Python library** and **free, self-hosted MCP server** for real-time web access — DuckDuckGo search + page fetching (HTML → Markdown, PDF → text) — with SSRF protection and DNS pinning. **No API key required** for the default provider.
+A lightweight **Python library** and **free, self-hosted MCP server** for real-time web access — DuckDuckGo search + page fetching (HTML → Markdown, PDF → text, JS-rendered pages via browser) — with SSRF protection, DNS pinning, and HTTP-to-browser fallback. **No API key required** for the default provider.
 
 ```python
 from websift import WebSearchClient
@@ -68,7 +68,7 @@ That's it — simple, focused, and reliable.
 ### Core Strengths
 
 - **🆓 Completely Free (default)** — Default **DDGS** provider needs no API key or subscription. Upstream DuckDuckGo and target sites may still rate-limit or block clients.
-- **🪶 Lightweight** — Single Python process, few base dependencies (MCP optional), runs in a tiny Docker container (`python:3.12-slim` ≈ 150 MB).
+- **🪶 Lightweight** — Base package has 3 core dependencies. MCP, provider adapters, and browser rendering are optional extras.
 - **🔒 Secure by Default** — SSRF protection (global-only IP policy, multi-answer DNS validation, no URL userinfo), DNS pinning + SNI, redirect re-validation, body/decompress limits, and content-type checks.
 - **🌐 Universal MCP Compatibility** — Works with any MCP client (VS Code, Claude, Cursor, Windsurf, JetBrains, custom agents, etc.).
 - **📄 Smart Content Extraction** — HTML → Markdown via BeautifulSoup (main-content selection), PDF → text via **pypdf only**, binary detection, charset order BOM → HTTP → meta → UTF-8.
@@ -88,29 +88,31 @@ That's it — simple, focused, and reliable.
 
 ## Comparison with Alternatives
 
-| Feature                    | **websift**      | Tavily MCP                  | Firecrawl MCP         | Exa MCP               | Brave Search MCP            |
-| -------------------------- | ---------------------- | --------------------------- | --------------------- | --------------------- | --------------------------- |
-| **Price**            | ✅ Free                | 💰 Paid (free tier limited) | 💰 Paid               | 💰 Paid               | 💰 Paid (free tier limited) |
-| **API Key Required** | ✅ No                  | ❌ Yes                      | ❌ Yes                | ❌ Yes                | ❌ Yes                      |
-| **Self-Hosted**      | ✅ Yes                 | ❌ No                       | ⚠️ Partial          | ❌ No                 | ❌ No                       |
-| **Web Search**       | ✅ DuckDuckGo          | ✅ Proprietary              | ❌ (scrape only)      | ✅ Proprietary        | ✅ Brave                    |
-| **Web Fetch**        | ✅ HTML + PDF          | ✅ Yes                      | ✅ Yes (deep)         | ✅ Yes                | ❌ No                       |
-| **SSRF Protection**  | ✅ Built-in            | ⚠️ Managed                | ⚠️ Managed          | ⚠️ Managed          | ⚠️ Managed                |
-| **Container Size**   | ~150 MB                | N/A (SaaS)                  | ~500 MB+              | N/A (SaaS)            | N/A (SaaS)                  |
-| **Dependencies**     | 3 base (+ optional MCP) | N/A                         | Many                  | N/A                   | N/A                         |
-| **Rate Limits**      | Upstream DDGS / sites  | Provider limits             | Provider limits       | Provider limits       | Provider limits             |
-| **Privacy**          | Self-hosted + outbound | ⚠️ Data to provider       | ⚠️ Data to provider | ⚠️ Data to provider | ⚠️ Data to provider       |
+| Feature                    | **websift**          | Tavily MCP                  | Firecrawl MCP         | Exa MCP               | Brave Search MCP            |
+| -------------------------- | -------------------------- | --------------------------- | --------------------- | --------------------- | --------------------------- |
+| **Price**            | ✅ Free                    | 💰 Paid (free tier limited) | 💰 Paid               | 💰 Paid               | 💰 Paid (free tier limited) |
+| **API Key Required** | ✅ No                      | ❌ Yes                      | ❌ Yes                | ❌ Yes                | ❌ Yes                      |
+| **Self-Hosted**      | ✅ Yes                     | ❌ No                       | ⚠️ Partial          | ❌ No                 | ❌ No                       |
+| **Web Search**       | ✅ DuckDuckGo              | ✅ Proprietary              | ❌ (scrape only)      | ✅ Proprietary        | ✅ Brave                    |
+| **Web Fetch**        | ✅ HTML + PDF + browser    | ✅ Yes                      | ✅ Yes (deep)         | ✅ Yes                | ❌ No                       |
+| **JS Rendering**     | ✅ browser extra           | ⚠️ Limited                | ✅ Yes                | ⚠️ Limited          | ❌ No                       |
+| **SSRF Protection**  | ✅ Built-in                | ⚠️ Managed                | ⚠️ Managed          | ⚠️ Managed          | ⚠️ Managed                |
+| **Container Size**   | ~150 MB (base)             | N/A (SaaS)                  | ~500 MB+              | N/A (SaaS)            | N/A (SaaS)                  |
+| **Dependencies**     | 3 base (+ optional extras) | N/A                         | Many                  | N/A                   | N/A                         |
+| **Rate Limits**      | Upstream DDGS / sites      | Provider limits             | Provider limits       | Provider limits       | Provider limits             |
+| **Privacy**          | Self-hosted + outbound     | ⚠️ Data to provider       | ⚠️ Data to provider | ⚠️ Data to provider | ⚠️ Data to provider       |
 
 ### When to Choose What
 
-| Scenario                                                               | Recommended          |
-| ---------------------------------------------------------------------- | -------------------- |
-| You want**free, no-signup** web access for AI                    | **websift** ✅ |
-| You need**deep scraping** (JS-rendered pages, sitemaps)          | Firecrawl            |
-| You need**semantic search** (AI-powered relevance)               | Exa                  |
-| You want**agentic-optimized** search (Tavily's `extract` mode) | Tavily               |
-| You want**self-hosted** control (still outbound search/fetch)    | **websift** ✅ |
-| You're building a**custom AI agent** with minimal infra          | **websift** ✅ |
+| Scenario                                                               | Recommended                   |
+| ---------------------------------------------------------------------- | ----------------------------- |
+| You want**free, no-signup** web access for AI                    | **websift** ✅          |
+| You need**JS rendering** with self-hosted control                | **websift[browser]** ✅ |
+| You need**deep scraping** (sitemaps, large-scale)                | Firecrawl                     |
+| You need**semantic search** (AI-powered relevance)               | Exa                           |
+| You want**agentic-optimized** search (Tavily's `extract` mode) | Tavily                        |
+| You want**self-hosted** control (still outbound search/fetch)    | **websift** ✅          |
+| You're building a**custom AI agent** with minimal infra          | **websift** ✅          |
 
 ---
 
@@ -127,15 +129,27 @@ That's it — simple, focused, and reliable.
 ┌────────────┐                     │  + WorkLimits        │
 │  search()  │──► SearchProvider   │                      │
 │            │    (default: DDGS)  │                      │
-│  fetch()   │──► urllib + SSRF    │                      │
-│            │    ├── html.py      │                      │
-│            │    ├── http.py      │                      │
-│            │    ├── security.py  │                      │
-│            │    └── content.py   │                      │
+│  fetch()   │──► FetchOrchestrator│                      │
+│            │    ├── native provider stage (Tavily/Exa) │
+│            │    ├── HttpFetchBackend (SSRF-safe)       │
+│            │    ├── Challenge/JS-Shell Detector        │
+│            │    └── RemoteBrowserBackend (optional)    │
 └────────────┘                     └──────────────────────┘
 ```
 
-Outbound data flow: **search** → configured provider (default DuckDuckGo via `ddgs`); **fetch** → primary provider (`BaseProvider.fetch`, generic SSRF-safe by default). With `SEARCH_PROVIDER=tavily|exa` and `PROVIDER_NATIVE_FETCH=true` (default), `web_fetch` may call Tavily `/extract` or Exa `/contents` (credits apply) before falling back to generic fetch. Provider API secrets never ride the target page-fetch path; native extract sends only the URL as JSON to the provider origin.
+Outbound data flow: **search** → configured provider (default DuckDuckGo via `ddgs`); **fetch** → `FetchOrchestrator` routes through native provider → HTTP → browser (conditional). Provider API secrets never ride the target page-fetch path.
+
+### Fetch Backend Modes
+
+| Mode               | Flow                                                          | Browser?    |
+| ------------------ | ------------------------------------------------------------- | ----------- |
+| `auto` (default) | native provider → HTTP → browser only on challenge/JS-shell | Conditional |
+| `http`           | HTTP only                                                     | Never       |
+| `browser`        | Browser directly                                              | Always      |
+
+In `auto` mode, the orchestrator escapes to the browser only when the detector finds concrete evidence (Cloudflare-style challenge markers or JavaScript-only shells). Ordinary pages with inline JavaScript are not escalated. The browser service is a separate, optional Docker container.
+
+**Backward compatibility:** Without a browser service configured, `auto` mode behaves identically to the previous release: HTTP fetch with native provider shortcut.
 
 ### Module Structure
 
@@ -155,8 +169,17 @@ websift/
 ├── client.py         # public search/fetch façade
 ├── provider_http.py  # credentialed provider transport (isolated from page fetch)
 ├── providers/        # SearchProvider contract, registry, DDGS + others
-└── server.py         # create_server / ServerApp
-server.py             # thin entry → websift.cli:main
+├── server.py         # create_server / ServerApp
+└── fetching/         # Fetch orchestration (internal)
+    ├── backend.py    # FetchBackend protocol + FetchBackendOutcome
+    ├── http.py       # HttpFetchBackend (generic SSRF-safe HTTP)
+    ├── detector.py   # Challenge/JS-shell detection
+    ├── orchestrator.py # FetchOrchestrator (native -> HTTP -> browser)
+    └── browser_client.py # RemoteBrowserBackend (optional httpx client)
+services/browser/     # Standalone Camoufox browser service
+├── browser_service/  # FastAPI app, runtime, proxy, policy
+├── Dockerfile
+└── tests/
 ```
 
 ---
@@ -169,11 +192,27 @@ server.py             # thin entry → websift.cli:main
 pip install websift
 ```
 
-That's it for the **Python library** and CLI `search` / `fetch`. For the **MCP server** (`websift serve`):
+That's it for the **Python library** and CLI `search` / `fetch`. For additional features:
 
 ```bash
-pip install 'websift[mcp]'
+pip install 'websift[mcp]'           # MCP server (websift serve)
+pip install 'websift[browser]'       # Remote browser client (JS rendering)
+pip install 'websift[mcp-browser]'   # Both MCP + browser client
+pip install 'websift[providers]'     # All keyed providers
 ```
+
+**Install matrix:**
+
+| Extra             | Adds                    | Use Case                                         |
+| ----------------- | ----------------------- | ------------------------------------------------ |
+| (base)            | ddgs, bs4, pypdf        | Library + CLI, HTTP fetch only                   |
+| `[mcp]`         | FastMCP                 | MCP server for AI clients                        |
+| `[browser]`     | httpx                   | Remote browser client (requires browser service) |
+| `[mcp-browser]` | both                    | Full feature set                                 |
+| `[providers]`   | all provider adapters   | Brave, Tavily, Exa, Serper                       |
+| `[dev]`         | test, lint, build tools | Development                                      |
+
+The `[browser]` extra only installs the **remote HTTP client** (httpx). The actual browser runtime (Camoufox + Playwright) runs as a separate service — see [Browser Service](#browser-service).
 
 ### Option 2: Docker Compose
 
@@ -182,6 +221,9 @@ pip install 'websift[mcp]'
 git clone <repo-url>
 cd websift
 docker compose up -d --build
+
+# With browser rendering support:
+docker compose --profile browser up -d --build
 ```
 
 The MCP server will be available at `http://localhost:8787/mcp`.
@@ -214,8 +256,10 @@ pip install -e ".[dev]"  # includes MCP for server tests
 pip install -r requirements.txt
 pip install -e .
 
-# MCP server needs the optional extra
-pip install -e ".[mcp]"
+# Optional extras
+pip install -e ".[mcp]"           # MCP server
+pip install -e ".[browser]"       # Browser client
+pip install -e ".[mcp-browser]"   # Both
 
 # Run the server (console entry or module)
 websift serve
@@ -248,6 +292,7 @@ websift search "Python 3.12 features"
 websift search "asyncio tutorial" -n 10 --provider ddgs
 websift search "python" --json          # structured JSON for scripts
 websift fetch https://docs.python.org/3/
+websift fetch https://example.com --backend http   # force HTTP only
 websift fetch https://example.com/doc.pdf --max-chars 20000
 websift fetch https://example.com --json
 websift doctor
@@ -255,17 +300,18 @@ websift providers
 websift search "q1" "q2" --json
 ```
 
-| Command                         | Purpose                        |
-| ------------------------------- | ------------------------------ |
-| `websift` / `websift serve` | Run the MCP server             |
-| `websift search QUERY…`       | Print search results (one or more queries) |
-| `websift search QUERY --json` | JSON schema v2 (`ok` / `results` / `error`; batch envelope for multi-query) |
-| `websift fetch URL`           | Print page/PDF text to stdout  |
-| `websift fetch URL --json`    | JSON schema v2 (`ok` / `content` / `error`) |
-| `websift doctor`              | Settings / credentials (redacted) / MCP readiness |
-| `websift providers`           | List registered providers and capabilities |
-| `websift --version` / `-V`  | Print package version          |
-| `websift --help` / `-h`     | Show help                      |
+| Command                                             | Purpose                                                                           |
+| --------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `websift` / `websift serve`                     | Run the MCP server                                                                |
+| `websift search QUERY…`                          | Print search results (one or more queries)                                        |
+| `websift search QUERY --json`                     | JSON schema v2 (`ok` / `results` / `error`; batch envelope for multi-query) |
+| `websift fetch URL`                               | Print page/PDF text to stdout                                                     |
+| `websift fetch URL --backend {http,browser,auto}` | Control fetch backend mode                                                        |
+| `websift fetch URL --json`                        | JSON schema v2 (`ok` / `content` / `error`)                                 |
+| `websift doctor`                                  | Settings / credentials (redacted) / MCP readiness                                 |
+| `websift providers`                               | List registered providers and capabilities                                        |
+| `websift --version` / `-V`                      | Print package version                                                             |
+| `websift --help` / `-h`                         | Show help                                                                         |
 
 CLI flags override the corresponding environment variables for that process. Full env matrix is under [Configuration](#configuration).
 
@@ -338,6 +384,12 @@ client = WebSearchClient(settings=settings)
 
 # Or load env, then use as-is
 client = WebSearchClient(settings=AppSettings.from_env())
+
+# Browser rendering for JS-heavy pages
+from websift.settings import FetchSettings
+client = WebSearchClient(
+    fetch_backend="auto",  # "auto" (default), "http", "browser"
+)
 ```
 
 | Kwarg                                         | Type                          | Description                                                                     |
@@ -354,6 +406,7 @@ client = WebSearchClient(settings=AppSettings.from_env())
 | `include_links` / `include_images`        | `bool`                      | HTML extraction options                                                         |
 | `output_format`                             | `str`                       | `markdown` or `text`                                                        |
 | `native_fetch`                              | `bool`                      | Allow Tavily/Exa native extract for fetch                                       |
+| `fetch_backend`                             | `str`                       | `"auto"`, `"http"`, or `"browser"` for fetch backend mode                 |
 | `settings`                                  | `AppSettings`               | Full config tree (advanced kwargs still overlay when set)                       |
 
 **Perfect for:**
@@ -446,33 +499,47 @@ The Python programming language...
 
 ### Environment Variables
 
-| Variable                      | Default             | Description                                                                     |
-| ----------------------------- | ------------------- | ------------------------------------------------------------------------------- |
-| `MCP_HOST`                  | `127.0.0.1`       | Bind address (use`0.0.0.0` only when intentionally exposing)                  |
-| `MCP_PORT`                  | `8787`            | Listen port                                                                     |
-| `MCP_TRANSPORT`             | `streamable-http` | Transport:`streamable-http`, `sse`, or `stdio`                            |
-| `MCP_AUTH_MODE`             | `none`            | `none` or `bearer` (HTTP/SSE only)                                          |
-| `MCP_BEARER_TOKEN`          | (empty)             | Shared secret when`MCP_AUTH_MODE=bearer`                                      |
-| `SEARCH_PROVIDER`           | `ddgs`            | Server-wide search provider (**allowlisted**; not settable per tool call) |
-| `SEARCH_MAX_RESULTS`        | `5`               | Max search results returned                                                     |
-| `SEARCH_TIMEOUT_SECONDS`    | `30`              | Search timeout (seconds)                                                        |
-| `PROVIDER_NATIVE_FETCH`     | `true`            | Tavily/Exa may use paid extract/contents for`web_fetch`                       |
-| `FETCH_TIMEOUT_SECONDS`     | `30`              | Page fetch timeout (seconds)                                                    |
-| `SEARCH_TIMEOUT`            | (alias)             | **Deprecated**: if set and specific timeouts omit, maps to both           |
-| `SEARCH_FALLBACK_PROVIDERS` | (empty)             | Comma-separated allowlisted fallbacks after primary (no config/auth fallback)   |
-| `SEARCH_RETRY_MAX`          | `1`               | Extra retries after first attempt (DDGS + HTTP providers)                       |
-| `SEARCH_RETRY_BACKOFF_SECONDS` | `0.5`          | Base backoff (seconds); doubles each attempt, capped                              |
-| `PAGE_MAX_CHARS`            | `128000`          | Max characters returned from fetch                                              |
-| `SEARCH_MAX_CONCURRENCY`    | `8`               | Max concurrent search operations                                                |
-| `FETCH_MAX_CONCURRENCY`     | `16`              | Max concurrent page fetches                                                     |
-| `PDF_MAX_CONCURRENCY`       | `2`               | Max concurrent PDF parses                                                       |
-| `CACHE_ENABLED`             | `false`           | Opt-in in-memory TTL/LRU cache for successful search/fetch                      |
-| `SEARCH_CACHE_TTL_SECONDS`  | `300`             | Search cache TTL when enabled                                                   |
-| `FETCH_CACHE_TTL_SECONDS`   | `600`             | Fetch cache TTL when enabled                                                    |
-| `CACHE_MAX_ENTRIES`         | `256`             | Max cache entries                                                               |
-| `CACHE_BACKEND` / `CACHE_DIR` | `memory` / unset | Disk cache when `CACHE_BACKEND=disk` (requires `CACHE_DIR`) |
-| `FETCH_ALLOWED_DOMAINS` / `FETCH_DENIED_DOMAINS` | empty | Host suffix allow/deny for fetch |
-| `CACHE_MAX_BYTES`           | `33554432`        | Approx max cache payload bytes                                                  |
+| Variable                                             | Default             | Description                                                                     |
+| ---------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------- |
+| `MCP_HOST`                                         | `127.0.0.1`       | Bind address (use`0.0.0.0` only when intentionally exposing)                  |
+| `MCP_PORT`                                         | `8787`            | Listen port                                                                     |
+| `MCP_TRANSPORT`                                    | `streamable-http` | Transport:`streamable-http`, `sse`, or `stdio`                            |
+| `MCP_AUTH_MODE`                                    | `none`            | `none` or `bearer` (HTTP/SSE only)                                          |
+| `MCP_BEARER_TOKEN`                                 | (empty)             | Shared secret when`MCP_AUTH_MODE=bearer`                                      |
+| `SEARCH_PROVIDER`                                  | `ddgs`            | Server-wide search provider (**allowlisted**; not settable per tool call) |
+| `SEARCH_MAX_RESULTS`                               | `5`               | Max search results returned                                                     |
+| `SEARCH_TIMEOUT_SECONDS`                           | `30`              | Search timeout (seconds)                                                        |
+| `PROVIDER_NATIVE_FETCH`                            | `true`            | Tavily/Exa may use paid extract/contents for`web_fetch`                       |
+| `FETCH_TIMEOUT_SECONDS`                            | `30`              | Page fetch timeout (seconds)                                                    |
+| `SEARCH_TIMEOUT`                                   | (alias)             | **Deprecated**: if set and specific timeouts omit, maps to both           |
+| `SEARCH_FALLBACK_PROVIDERS`                        | (empty)             | Comma-separated allowlisted fallbacks after primary (no config/auth fallback)   |
+| `SEARCH_RETRY_MAX`                                 | `1`               | Extra retries after first attempt (DDGS + HTTP providers)                       |
+| `SEARCH_RETRY_BACKOFF_SECONDS`                     | `0.5`             | Base backoff (seconds); doubles each attempt, capped                            |
+| `PAGE_MAX_CHARS`                                   | `128000`          | Max characters returned from fetch                                              |
+| `SEARCH_MAX_CONCURRENCY`                           | `8`               | Max concurrent search operations                                                |
+| `FETCH_MAX_CONCURRENCY`                            | `16`              | Max concurrent page fetches                                                     |
+| `PDF_MAX_CONCURRENCY`                              | `2`               | Max concurrent PDF parses                                                       |
+| `CACHE_ENABLED`                                    | `false`           | Opt-in in-memory TTL/LRU cache for successful search/fetch                      |
+| `SEARCH_CACHE_TTL_SECONDS`                         | `300`             | Search cache TTL when enabled                                                   |
+| `FETCH_CACHE_TTL_SECONDS`                          | `600`             | Fetch cache TTL when enabled                                                    |
+| `CACHE_MAX_ENTRIES`                                | `256`             | Max cache entries                                                               |
+| `CACHE_BACKEND` / `CACHE_DIR`                    | `memory` / unset  | Disk cache when`CACHE_BACKEND=disk` (requires `CACHE_DIR`)                  |
+| `FETCH_ALLOWED_DOMAINS` / `FETCH_DENIED_DOMAINS` | empty               | Host suffix allow/deny for fetch                                                |
+| `FETCH_ALLOWED_PORTS` / `FETCH_DENIED_PORTS`     | empty               | Port allow/deny for fetch                                                       |
+| `FETCH_BACKEND`                                    | `auto`            | Fetch backend:`auto`, `http`, or `browser`                                |
+| `CACHE_MAX_BYTES`                                  | `33554432`        | Approx max cache payload bytes                                                  |
+
+#### Browser Settings
+
+| Variable                            | Default     | Description                                                                           |
+| ----------------------------------- | ----------- | ------------------------------------------------------------------------------------- |
+| `BROWSER_ENDPOINT`                | (empty)     | Browser service URL, e.g.`https://browser.internal` (required for `browser` mode) |
+| `BROWSER_TOKEN`                   | (empty)     | Bearer token for browser service authentication                                       |
+| `BROWSER_ALLOW_INSECURE_ENDPOINT` | `false`   | Allow`http://` endpoints (use only for local/trusted networks)                      |
+| `BROWSER_TIMEOUT_SECONDS`         | `60`      | Browser render timeout per page                                                       |
+| `BROWSER_POST_LOAD_WAIT_MS`       | `0`       | Additional wait after network idle                                                    |
+| `BROWSER_MAX_HTML_BYTES`          | `2097152` | Max rendered HTML bytes returned by browser                                           |
+| `BROWSER_MAX_CONCURRENCY`         | `4`       | Max concurrent browser requests                                                       |
 
 ### Search providers
 
@@ -485,7 +552,7 @@ Server-wide only (`SEARCH_PROVIDER`). MCP tools never accept provider name, base
 | **brave**          | `websift[brave]`                                 | `BRAVE_API_KEY` (required), optional `BRAVE_BASE_URL`     | Official Web Search API                                                           |
 | **tavily**         | `websift[tavily]`                                | `TAVILY_API_KEY` (required), optional `TAVILY_BASE_URL`   |                                                                                   |
 | **exa**            | `websift[exa]`                                   | `EXA_API_KEY` (required), optional `EXA_BASE_URL`         |                                                                                   |
-| **serper**        | `websift[serper]` (marker; no extra deps today) | `SERPER_API_KEY` (required), optional `SERPER_BASE_URL` | Google SERP via Serper API                                                      |
+| **serper**         | `websift[serper]` (marker; no extra deps today)  | `SERPER_API_KEY` (required), optional `SERPER_BASE_URL`   | Google SERP via Serper API                                                        |
 
 Convenience: `pip install 'websift[providers]'` (all keyed/self-hosted HTTP providers — currently no extra wheels beyond the base package; adapters use stdlib HTTP).
 
@@ -511,7 +578,84 @@ export SEARCH_FALLBACK_PROVIDERS=ddgs
 
 ---
 
-## Connecting to AI Clients
+## Browser Service
+
+The `[browser]` extra enables JS-rendered page support via a separate browser service. This keeps the base installation lightweight and isolates the browser runtime.
+
+### Architecture
+
+```
+WebSearchClient ──► FetchOrchestrator ──► HttpFetchBackend (fast)
+                                      ──► RemoteBrowserBackend (HTTP, conditional)
+                                                                    │
+                                                            ┌───────▼───────┐
+                                                            │  Browser      │
+                                                            │  Service      │
+                                                            │  (Camoufox)   │
+                                                            │  Docker       │
+                                                            └───────────────┘
+```
+
+### Quick Start
+
+```bash
+# Start the browser service (Docker Compose)
+docker compose --profile browser up -d --build
+
+# Configure websift to talk to it
+export BROWSER_ENDPOINT=http://localhost:8790
+
+# Use websift — "auto" mode only escalates to browser for challenge/JS-shell pages
+websift fetch "https://example.com"
+```
+
+### Standalone Docker
+
+```bash
+docker run -d --name websift-browser \
+  -p 8790:8790 \
+  -e BROWSER_API_TOKEN=your-secret-token \
+  -e PROXY_UPSTREAM=http://websift:3128 \
+  websift-browser:latest
+```
+
+### Configuration
+
+The browser service reads its configuration from environment variables. The WebSift client connects via `BROWSER_ENDPOINT` and `BROWSER_TOKEN`.
+
+### Security
+
+- **SSRF-safe proxy:** All browser egress flows through an internal forward proxy that validates DNS answers, pins to global IPs, and blocks private/link-local destinations.
+- **Route interception:** Every navigation, redirect, iframe, script, XHR, and WebSocket is validated against the fetch policy before the request is allowed.
+- **Isolated contexts:** Each render request gets a fresh browser context and page; no cookies or storage are shared between requests.
+- **Container hardened:** Non-root, drop capabilities, no-new-privileges, resource/PID limits.
+- **Protocol authentication:** Bearer token required when exposed beyond loopback.
+
+### What Browser Rendering Covers
+
+The browser backend renders JavaScript and may improve results for:
+
+- Single-page applications (React, Vue, Angular)
+- Pages that require JavaScript to display content
+- Some browser-compatible challenge pages
+
+**Browser rendering does NOT:**
+
+- Solve CAPTCHAs
+- Guarantee bypass of Cloudflare/DataDome/anti-bot services
+- Handle login walls, paywalls, or credential-protected content
+
+### Context Manager
+
+When using the browser client, close it explicitly to release the HTTP connection pool:
+
+```python
+from websift import WebSearchClient
+
+with WebSearchClient() as client:
+    content = client.fetch("https://example.com")
+# connection pool closed automatically
+```
 
 ### 1. VS Code (GitHub Copilot)
 
@@ -792,8 +936,12 @@ websift/
 ├── .github/workflows/      # Build/test matrix + PyPI publish gate
 ├── README.md               # This file
 ├── docs/
-│   └── README.vi.md        # Vietnamese documentation
+│   ├── README.vi.md        # Vietnamese documentation
+│   └── GUIDES.md           # Detailed step-by-step setup guide
 ├── tests/                  # Offline pytest suite (markers: live, provider)
+│   └── fetching/           # Fetch orchestration tests
+├── services/
+│   └── browser/            # Standalone Camoufox browser service
 └── websift/
     ├── __init__.py         # WebSearchClient, AppSettings, __version__
     ├── __main__.py         # python -m websift
@@ -810,6 +958,12 @@ websift/
     ├── client.py           # Public façade
     ├── provider_http.py    # Provider credential transport
     ├── providers/          # DDGS + registry
+    ├── fetching/           # Fetch orchestration
+    │   ├── backend.py      # FetchBackend protocol
+    │   ├── http.py         # HttpFetchBackend
+    │   ├── detector.py     # Challenge/JS-shell detection
+    │   ├── orchestrator.py # Native -> HTTP -> browser
+    │   └── browser_client.py # Remote HTTP browser client
     └── server.py           # create_server / ServerApp
 ```
 
@@ -874,6 +1028,9 @@ ruff format --check websift tests
 # Offline tests + coverage gate (≥85%)
 python -m pytest --cov=websift --cov-report=term-missing --cov-fail-under=85 -m "not live and not provider"
 
+# Browser service tests (separate venv)
+cd services/browser && python -m venv .venv && source .venv/bin/activate && pip install -e ".[test]" && python -m pytest tests/
+
 # Package
 python -m build
 twine check dist/*
@@ -915,7 +1072,15 @@ Yes, if outbound HTTPS to the search provider and target websites is allowed. In
 
 ### Q: How does this compare to Tavily or Firecrawl?
 
-This is simpler and free, but doesn't offer JS rendering, deep scraping, or semantic search. For basic web search + page fetching, it's a solid free alternative. See the [Comparison table](#comparison-with-alternatives) for details.
+This is simpler and free, with optional JS rendering via the browser service (`websift[browser]`). For large-scale scraping or semantic search, consider Firecrawl or Exa. See the [Comparison table](#comparison-with-alternatives) for details.
+
+### Q: Does the browser backend solve CAPTCHAs or bypass Cloudflare?
+
+**No.** The browser backend renders JavaScript and may improve results for some challenge pages, but it does not solve CAPTCHAs and does not guarantee bypassing Cloudflare/DataDome/anti-bot services. It is best effort.
+
+### Q: Does the browser service run in my Python process?
+
+**No.** The `[browser]` extra only installs a lightweight HTTP client (httpx). The actual browser runtime (Camoufox + Playwright) runs as a separate Docker container. This keeps the base package lightweight and isolates the browser process.
 
 ### Q: Can I add authentication?
 
@@ -996,3 +1161,4 @@ MIT — see [LICENSE](LICENSE) for details.
 - [Copilot CLI MCP Documentation](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers) — official GitHub Copilot CLI MCP guide
 - [Claude Desktop MCP Documentation](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop) — official Claude Desktop MCP guide
 - [JetBrains MCP Documentation](https://www.jetbrains.com/help/idea/mcp-server.html) — official JetBrains MCP guide
+- [Camoufox](https://github.com/httptoolkit/camoufox) — Firefox-based browser with anti-detection capabilities (browser service)

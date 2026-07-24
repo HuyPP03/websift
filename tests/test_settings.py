@@ -6,6 +6,8 @@ import websift.settings as settings_mod
 from websift.client import WebSearchClient
 from websift.settings import (
     AppSettings,
+    BrowserSettings,
+    FetchSettings,
     ProviderSettings,
     ServerSettings,
     SettingsError,
@@ -21,6 +23,7 @@ def test_import_does_not_read_environ(monkeypatch):
     assert s.provider.name == "ddgs"
     assert s.provider.timeout_seconds == 30.0
     assert s.fetch.timeout_seconds == 30.0
+    assert s.fetch.backend == "auto"
     assert s.provider.max_results == 5
 
 
@@ -95,6 +98,82 @@ def test_invalid_transport():
         raised = True
         assert e.code == "invalid_transport"
     assert raised
+
+
+def test_invalid_fetch_backend():
+    try:
+        AppSettings.from_env({"FETCH_BACKEND": "remote"})
+        raised = False
+    except SettingsError as e:
+        raised = True
+        assert e.code == "invalid_fetch_backend"
+    assert raised
+
+
+def test_fetch_backend_env_and_constructor_kwarg():
+    settings = AppSettings.from_env({"FETCH_BACKEND": "http"})
+    assert settings.fetch.backend == "http"
+    client = WebSearchClient(fetch_backend="http")
+    assert client._settings is not None
+    assert client._settings.fetch.backend == "http"
+
+
+def test_browser_settings_env_and_token_redaction():
+    settings = AppSettings.from_env(
+        {
+            "BROWSER_ENDPOINT": "https://browser.example",
+            "BROWSER_TOKEN": "top-secret",
+            "BROWSER_TIMEOUT_SECONDS": "12.5",
+            "BROWSER_POST_LOAD_WAIT_MS": "250",
+            "BROWSER_MAX_HTML_BYTES": "1000",
+            "BROWSER_MAX_RESPONSE_BYTES": "1200",
+            "BROWSER_MAX_CONCURRENCY": "3",
+        }
+    )
+    assert settings.browser.endpoint == "https://browser.example"
+    assert settings.browser.timeout_seconds == 12.5
+    assert settings.browser.post_load_wait_ms == 250
+    assert settings.browser.max_html_bytes == 1000
+    assert settings.browser.max_response_bytes == 1200
+    assert settings.browser.max_concurrency == 3
+    assert "top-secret" not in repr(settings.browser)
+    assert "top-secret" not in repr(settings)
+
+
+def test_browser_endpoint_validation():
+    invalid = (
+        "browser.example",
+        "ftp://browser.example",
+        "https://user:pass@browser.example",
+        "https://browser.example/path",
+        "https://browser.example?x=1",
+        "https://browser.example#fragment",
+        "http://browser.example",
+    )
+    for endpoint in invalid:
+        try:
+            AppSettings(browser=BrowserSettings(endpoint=endpoint)).validate()
+            raised = False
+        except SettingsError:
+            raised = True
+        assert raised, endpoint
+    AppSettings(browser=BrowserSettings(endpoint="http://localhost:8080")).validate()
+    AppSettings(browser=BrowserSettings(endpoint="http://browser.example", allow_insecure_endpoint=True)).validate()
+
+
+def test_browser_backend_requires_endpoint_and_positive_limits():
+    for settings in (
+        AppSettings(fetch=FetchSettings(backend="browser")),
+        AppSettings(browser=BrowserSettings(timeout_seconds=0)),
+        AppSettings(browser=BrowserSettings(max_html_bytes=100, max_response_bytes=99)),
+        AppSettings(browser=BrowserSettings(max_concurrency=0)),
+    ):
+        try:
+            settings.validate()
+            raised = False
+        except SettingsError:
+            raised = True
+        assert raised
 
 
 def test_invalid_int():
@@ -229,6 +308,7 @@ def test_full_flag_matrix_from_env():
             "SEARCH_RETRY_BACKOFF_SECONDS": "0.25",
             "SEARCH_ALLOW_UNSUPPORTED_FILTERS": "true",
             "SEARCH_FALLBACK_PROVIDERS": "ddgs",
+            "FETCH_BACKEND": "http",
             "FETCH_MAX_BYTES": "10000",
             "FETCH_MAX_PDF_BYTES": "20000",
             "FETCH_MAX_REDIRECTS": "3",
@@ -264,6 +344,7 @@ def test_full_flag_matrix_from_env():
     assert s.provider.retry_max == 2
     assert s.provider.retry_backoff_seconds == 0.25
     assert s.provider.allow_unsupported_filters is True
+    assert s.fetch.backend == "http"
     assert s.fetch.max_bytes == 10000
     assert s.fetch.max_pdf_bytes == 20000
     assert s.fetch.max_redirects == 3

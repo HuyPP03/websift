@@ -159,8 +159,6 @@ def process_fetched_body(
             min_main_content_chars=min_main_content_chars,
             output_format=output_format,
         )
-        if not text.strip() and body.strip():
-            text = body.strip()
 
     if prefix:
         text = f"{prefix}{text}"
@@ -190,6 +188,14 @@ def github_readme_api_url(url: str) -> str | None:
     return f"https://api.github.com/repos/{owner}/{repo}/readme"
 
 
+@dataclass(frozen=True)
+class GenericFetchOutcome:
+    """Generic fetch result plus bounded HTML captured before extraction."""
+
+    result: FetchResult
+    raw_html: str = ""
+
+
 class BaseProvider:
     """Base search provider with default SSRF-safe generic fetch.
 
@@ -214,9 +220,17 @@ class BaseProvider:
 
     def fetch(self, url: str) -> FetchResult:
         """Default generic fetch (SSRF/DNS pin, GitHub README shortcut, extraction)."""
+        return self.fetch_generic_outcome(url).result
+
+    def fetch_generic_outcome(self, url: str, *, raw_html_limit: int = 20_000) -> GenericFetchOutcome:
+        """Fetch normally while exposing bounded successful HTML before extraction.
+
+        ``fetch_raw`` represents HTTP error responses as failures without their bodies,
+        so this MVP evidence path intentionally covers successful HTML responses only.
+        """
         url = (url or "").strip()
         if not url:
-            return FetchResult.failure(url, "No URL provided.", ErrorCategory.EMPTY_INPUT)
+            return GenericFetchOutcome(FetchResult.failure(url, "No URL provided.", ErrorCategory.EMPTY_INPUT))
 
         ctx = self._fetch_context
         fetch_timeout = float(ctx.timeout_seconds)
@@ -252,15 +266,18 @@ class BaseProvider:
                     rendered = truncate(text, ctx.max_page_chars)
                     truncated = pre_len > ctx.max_page_chars
                 if rendered.strip():
-                    return FetchResult.success(
-                        url,
-                        rendered,
-                        final_url=gh.final_url or readme_url,
-                        content_type=ct or "text/plain",
-                        status_code=gh.status_code,
-                        bytes_read=gh.bytes_read,
-                        redirect_count=gh.redirect_count,
-                        truncated=truncated,
+                    return GenericFetchOutcome(
+                        FetchResult.success(
+                            url,
+                            rendered,
+                            final_url=gh.final_url or readme_url,
+                            content_type=ct or "text/plain",
+                            status_code=gh.status_code,
+                            bytes_read=gh.bytes_read,
+                            redirect_count=gh.redirect_count,
+                            truncated=truncated,
+                        ),
+                        raw_html=body[:raw_html_limit] if looks_like_html_document(body) else "",
                     )
 
         raw = fetch_raw(
@@ -272,18 +289,23 @@ class BaseProvider:
             **self._fetch_kwargs(),
         )
         if not raw.ok:
-            return FetchResult.failure(
-                url,
-                raw.error_message or "Fetch failed",
-                raw.error_category or ErrorCategory.UNKNOWN,
-                final_url=raw.final_url,
-                content_type=raw.content_type,
-                status_code=raw.status_code,
-                bytes_read=raw.bytes_read,
-                redirect_count=raw.redirect_count,
-                overflow=raw.overflow,
+            return GenericFetchOutcome(
+                FetchResult.failure(
+                    url,
+                    raw.error_message or "Fetch failed",
+                    raw.error_category or ErrorCategory.UNKNOWN,
+                    final_url=raw.final_url,
+                    content_type=raw.content_type,
+                    status_code=raw.status_code,
+                    bytes_read=raw.bytes_read,
+                    redirect_count=raw.redirect_count,
+                    overflow=raw.overflow,
+                )
             )
 
+        raw_html = ""
+        if "html" in (raw.content_type or "").lower() or looks_like_html(raw.content):
+            raw_html = raw.content[:raw_html_limit]
         rendered, truncated = process_fetched_body(
             raw.content,
             raw.content_type,
@@ -291,16 +313,19 @@ class BaseProvider:
             base_url=raw.final_url or url,
             **self._extraction_kwargs(),
         )
-        return FetchResult.success(
-            url,
-            rendered,
-            final_url=raw.final_url or url,
-            content_type=raw.content_type,
-            status_code=raw.status_code,
-            bytes_read=raw.bytes_read,
-            redirect_count=raw.redirect_count,
-            truncated=truncated,
-            overflow=raw.overflow,
+        return GenericFetchOutcome(
+            FetchResult.success(
+                url,
+                rendered,
+                final_url=raw.final_url or url,
+                content_type=raw.content_type,
+                status_code=raw.status_code,
+                bytes_read=raw.bytes_read,
+                redirect_count=raw.redirect_count,
+                truncated=truncated,
+                overflow=raw.overflow,
+            ),
+            raw_html=raw_html,
         )
 
     def validate_url_for_provider(self, url: str) -> FetchResult | None:

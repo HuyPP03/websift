@@ -23,6 +23,10 @@ services:
       SEARCH_FALLBACK_PROVIDERS: ${SEARCH_FALLBACK_PROVIDERS:-}
       SEARCH_TIMEOUT_SECONDS: ${SEARCH_TIMEOUT_SECONDS:-30}
       FETCH_TIMEOUT_SECONDS: ${FETCH_TIMEOUT_SECONDS:-30}
+      # Internal browser service (start with: docker compose --profile browser up).
+      BROWSER_ENDPOINT: ${BROWSER_ENDPOINT:-http://browser:8790}
+      BROWSER_TOKEN: ${BROWSER_TOKEN:-websift-dev-token}
+      BROWSER_ALLOW_INSECURE_ENDPOINT: ${BROWSER_ALLOW_INSECURE_ENDPOINT:-true}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Provider endpoints/keys — empty by default; set via shell env or:
       #   docker compose --env-file .env up
@@ -39,3 +43,24 @@ services:
     # Optional resource hints (uncomment if your orchestrator supports them):
     # mem_limit: 512m
     # cpus: "1.0"
+
+  browser:
+    profiles: ["browser"]
+    build: ./services/browser
+    image: websift-browser:local
+    environment:
+      BROWSER_HOST: "0.0.0.0"
+      BROWSER_PORT: "8790"
+      BROWSER_TOKEN: ${BROWSER_TOKEN:-websift-dev-token}
+      BROWSER_CONCURRENCY: ${BROWSER_CONCURRENCY:-2}
+      BROWSER_ALLOWED_PORTS: ${BROWSER_ALLOWED_PORTS:-80,443}
+      BROWSER_ALLOW_HTTP: ${BROWSER_ALLOW_HTTP:-true}
+      BROWSER_ALLOWED_DOMAINS: ${BROWSER_ALLOWED_DOMAINS:-}
+      BROWSER_DENIED_DOMAINS: ${BROWSER_DENIED_DOMAINS:-}
+    expose:
+      - "8790"
+    ports:
+      - "${BROWSER_PORT_HOST:-127.0.0.1:8790}:8790"
+    init: true
+    shm_size: "1gb"
+    restart: unless-stopped

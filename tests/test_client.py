@@ -18,6 +18,50 @@ from websift.models import (
     SearchResult,
 )
 from websift.providers.base import github_readme_api_url
+from websift.settings import AppSettings, BrowserSettings, FetchSettings
+
+
+class TestBrowserWiring:
+    def test_auto_without_endpoint_does_not_import_browser_client(self, monkeypatch):
+        import builtins
+
+        real_import = builtins.__import__
+
+        def guarded(name, *args, **kwargs):
+            if name == "websift.fetching.browser_client":
+                pytest.fail("browser client must remain lazy without an endpoint")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", guarded)
+        client = WebSearchClient(settings=AppSettings())
+        assert client._fetch_orchestrator.browser_backend is None
+
+    def test_configured_endpoint_wires_browser_and_client_close(self, monkeypatch):
+        import websift.fetching.browser_client as browser_module
+
+        calls = {"closed": 0}
+
+        class FakeBrowser:
+            fingerprint = "browser-test"
+
+            def __init__(self, settings, fetch_context):
+                self.settings = settings
+
+            def fetch(self, url):
+                return FetchResult.success(url, "browser")
+
+            def close(self):
+                calls["closed"] += 1
+
+        monkeypatch.setattr(browser_module, "RemoteBrowserBackend", FakeBrowser)
+        settings = AppSettings(
+            fetch=FetchSettings(backend="browser"),
+            browser=BrowserSettings(endpoint="https://browser.example"),
+        )
+        with WebSearchClient(settings=settings) as client:
+            assert client._fetch_orchestrator.browser_backend is client._browser_backend
+            assert "browser-test" in client._fetch_orchestrator.fingerprint
+        assert calls["closed"] == 1
 
 
 class TestSearch:
@@ -106,8 +150,8 @@ class TestFetch:
 
     def test_fetch_error_passthrough(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
-            "websift.providers.base.fetch_raw",
-            lambda *a, **k: FetchResult.failure("http://x/", "Blocked: private", ErrorCategory.BLOCKED),
+            "websift.security.preflight_fetch_url",
+            lambda *_args, **_kwargs: (False, "Blocked: private", None),
         )
         assert WebSearchClient().fetch("http://x/") == "Blocked: private"
 

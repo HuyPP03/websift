@@ -12,7 +12,7 @@ from websift.cache import (
     make_search_cache_key,
 )
 from websift.client import WebSearchClient
-from websift.models import FetchResult, SearchRequest, SearchResponse, SearchResult
+from websift.models import ErrorCategory, FetchResult, SearchRequest, SearchResponse, SearchResult
 from websift.settings import AppSettings, CacheSettings
 
 
@@ -98,27 +98,37 @@ def test_cache_key_helpers_stable():
     k3 = make_search_cache_key(req, provider="brave")
     assert k1 == k2
     assert k1 != k3
-    f1 = make_fetch_cache_key(
+    fetch_options = {
+        "timeout_seconds": 30.0,
+        "max_bytes": 1_000_000,
+        "max_pdf_bytes": 2_000_000,
+        "max_redirects": 5,
+        "max_compressed_bytes": 1_000_000,
+        "max_decompressed_bytes": 2_000_000,
+        "pdf_max_pages": 20,
+        "pdf_max_chars": 50_000,
+        "allow_http": True,
+        "allowed_ports": frozenset({80, 443}),
+        "allowed_domains": frozenset(),
+        "denied_domains": frozenset(),
+        "max_page_chars": 1000,
+        "min_main_content_chars": 100,
+        "include_links": True,
+        "include_images": False,
+        "output_format": "markdown",
+        "native_fetch": True,
+        "backend": "auto",
+        "provider": "ddgs",
+        "implementation_fingerprint": "orchestrator-v1:http-v1:detector-v1",
+    }
+    f1 = make_fetch_cache_key("https://example.com", **fetch_options)
+    f2 = make_fetch_cache_key("https://example.com", **fetch_options)
+    f3 = make_fetch_cache_key(
         "https://example.com",
-        max_page_chars=1000,
-        include_links=True,
-        include_images=False,
-        output_format="markdown",
-        native_fetch=True,
-        allow_http=True,
-        provider="ddgs",
-    )
-    f2 = make_fetch_cache_key(
-        "https://example.com",
-        max_page_chars=1000,
-        include_links=True,
-        include_images=False,
-        output_format="markdown",
-        native_fetch=True,
-        allow_http=True,
-        provider="ddgs",
+        **{**fetch_options, "max_decompressed_bytes": 3_000_000},
     )
     assert f1 == f2
+    assert f1 != f3
 
 
 def test_estimate_sizes_positive():
@@ -174,6 +184,41 @@ def test_client_search_cache_hits(monkeypatch):
     f2 = client.fetch_structured("https://example.com/page")
     assert f1.ok and f2.ok
     assert calls["n"] == 2  # one search + one fetch
+
+
+def test_fetch_cache_revalidates_preflight_before_lookup(monkeypatch):
+    calls = {"preflight": 0, "fetch": 0}
+
+    class FakeProvider:
+        name = "fake"
+
+        def search(self, request):
+            return []
+
+        def fetch(self, url: str):
+            calls["fetch"] += 1
+            return FetchResult.success(url, "content body")
+
+    from websift.security import FetchURLPreflight, validate_http_url
+
+    ok, _, validated = validate_http_url("https://example.com/page")
+    assert ok and validated is not None
+
+    def preflight(url, **kwargs):
+        calls["preflight"] += 1
+        if calls["preflight"] == 2:
+            return False, "Blocked: hostname is now denied.", None
+        return True, "", FetchURLPreflight(validated=validated, pinned_ip="8.8.8.8")
+
+    monkeypatch.setattr("websift.security.preflight_fetch_url", preflight)
+    settings = AppSettings(cache=CacheSettings(enabled=True, fetch_ttl_seconds=60))
+    client = WebSearchClient(settings=settings, provider=FakeProvider())
+
+    first = client.fetch_structured("https://example.com/page")
+    second = client.fetch_structured("https://example.com/page")
+    assert first.ok
+    assert second.error_category == ErrorCategory.BLOCKED
+    assert calls == {"preflight": 2, "fetch": 1}
 
 
 def test_client_does_not_cache_errors():

@@ -1,9 +1,9 @@
 """Shared constants for websift."""
 
-MAX_FETCH_BYTES = 4 * 1024 * 1024  # 4 MB for normal pages (decompressed)
+MAX_FETCH_BYTES = 10 * 1024 * 1024  # 4 MB for normal pages (decompressed)
 MAX_PDF_FETCH_BYTES = 20 * 1024 * 1024  # 20 MB for PDFs (download)
-MAX_COMPRESSED_BYTES = 4 * 1024 * 1024  # wire/compressed download cap
-MAX_DECOMPRESSED_BYTES = 4 * 1024 * 1024  # post-decompression cap (bomb guard)
+MAX_COMPRESSED_BYTES = 10 * 1024 * 1024  # wire/compressed download cap
+MAX_DECOMPRESSED_BYTES = 10 * 1024 * 1024  # post-decompression cap (bomb guard)
 MAX_PAGE_CHARS = 128_000  # chars fed to LLM
 MIN_MAIN_CONTENT_CHARS = 200
 MAX_REDIRECTS = 5

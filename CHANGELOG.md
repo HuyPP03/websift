@@ -5,6 +5,57 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-07-24
+
+### Added
+
+- **Fetch orchestration** — `FetchOrchestrator` routes fetches through native provider → HTTP → browser with a versioned challenge/JS-shell detector. Orchestrator replaces the monolithic fetch path and enables incremental fallback.
+- **Browser rendering** — Optional `[browser]` extra installs a lightweight remote HTTP client (httpx). The browser runtime (Camoufox + Playwright) runs as a separate Docker service (`services/browser/`).
+- **`websift[browser]` and `websift[mcp-browser]` extras** — Base wheel remains lightweight (ddgs, bs4, pypdf). Browser client, MCP and provider adapters are optional.
+- **`FetchSettings.backend`** — `auto` (default), `http`, and `browser` modes. `auto` conditionally escalates HTTP to browser only on challenge/JS-shell evidence. `http` and `browser` modes skip stages.
+- **`BrowserSettings`** — Frozen configuration for `BROWSER_ENDPOINT`, `BROWSER_TOKEN`, `BROWSER_ALLOW_INSECURE_ENDPOINT`, `BROWSER_TIMEOUT_SECONDS`, `BROWSER_POST_LOAD_WAIT_MS`, `BROWSER_MAX_HTML_BYTES`, `BROWSER_MAX_CONCURRENCY`.
+- **Raw HTML detection** — `GenericFetchOutcome` / `FetchBackendOutcome` carry bounded raw HTML alongside the extracted `FetchResult`, so the detector inspects original HTML (not post-extraction Markdown).
+- **URL/DNS preflight before cache** — `FetchURLPreflight` validates URL and all DNS answers before any cache or backend call, preventing cached results from bypassing security policy changes.
+- **Versioned fetch cache key** (`fetch-v2`) — Cache fingerprint includes timeout, max bytes, ports, domains, backend mode, implementation fingerprint, and detector version. HTTP and browser results use separate namespaces.
+- **`FetchOrchestrator.fingerprint`** — Combined orchestrator/backend/browser/detector fingerprint for cache key and doctor output.
+- **`--backend` flag for `websift fetch` CLI** — Operator-configurable backend mode (`auto|http|browser`).
+- **Standalone browser service** — `services/browser/` with FastAPI app, Camoufox runtime, egress proxy, route interception, policy enforcement, and hardened Dockerfile (non-root, no-new-privileges).
+- **Context manager** — `WebSearchClient` supports `with` statement and explicit `close()` for proper HTTP connection pool cleanup.
+- **Doctor output** — Reports browser client extra, endpoint readiness, and token presence (redacted).
+
+### Changed
+
+- **`BaseProvider.fetch()` refactored** — Split into `fetch_generic_outcome()` (raw HTML + result) and `fetch()` (compatibility shim). Provider native extract is now a discrete stage, not a fallback.
+- **`websift/providers/tavily.py` and `websift/providers/exa.py`** — `fetch_native()` extracted as a stage; `fetch()` compatibility shim calls orchestrator pattern.
+- **`websift/cache.py`** — Fetch cache key versioned to `fetch-v2` with comprehensive policy fingerprint.
+- **`websift/client.py`** — Integrated fetch orchestration: preflight → cache → orchestrator. Added `_init_fetch_orchestrator()`, `fetch_backend` constructor kwarg.
+- **`websift/security.py`** — Added `FetchURLPreflight` dataclass and `preflight_fetch_url()` for pre-fetch DNS-aware validation.
+- **`websift/settings.py`** — Added `FetchSettings.backend`, `BrowserSettings`, browser validation, and `BROWSER_*` environment variable parsing.
+- **`pyproject.toml`** — Added `browser = ["httpx>=0.27,<1"]` and `mcp-browser` extras.
+- **`docker-compose.yml`** — Added browser service with `browser` profile, internal network, port 8790.
+
+### Security
+
+- **SSRF-safe egress proxy** — Browser service traffic flows through an internal HTTP/CONNECT forward proxy that validates all DNS answers, pins to global IPs, and blocks private/link-local/metadata destinations.
+- **Route interception** — Playwright route handler validates every document, redirect, iframe, script, XHR, fetch, stylesheet, image, font, media, and WebSocket against the fetch policy.
+- **Isolated browser contexts** — Each render request gets a fresh browser context and page; no cookies or storage shared between requests.
+- **Protocol authentication** — Bearer token required for browser service when exposed beyond loopback.
+- **Container hardening** — Browser service runs non-root, drops capabilities, enforces no-new-privileges, resource/PID limits.
+
+### Breaking Changes
+
+| Change | Migration |
+| ------ | --------- |
+| Fetch cache key versioned to `fetch-v2` | Existing `fetch-v1` cache entries are invalidated on upgrade |
+| `BaseProvider.fetch()` internal signature | Custom providers should implement `fetch()` returning `FetchResult`; orchestrator integration uses `fetch_outcome()` |
+
+### Backward Compatibility
+
+- `WebSearchClient.fetch()` / `fetch_structured()` and async wrappers retain the same public signatures and output.
+- MCP `web_fetch` still accepts only `url`; backend/endpoint/token are operator configuration.
+- Without a browser service configured, `auto` mode (default) behaves identically to v1.3.x.
+- Base wheel smoke test confirms no httpx/Playwright/Camoufox dependency.
+
 ## [1.3.0] - 2026-07-23
 
 ### Added

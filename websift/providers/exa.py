@@ -125,26 +125,30 @@ class ExaProvider(BaseProvider):
                 break
         return out
 
-    def fetch(self, url: str) -> FetchResult:
+    def fetch_native(self, url: str) -> FetchResult | None:
+        """Run only Exa extraction; return None when generic HTTP should follow."""
         url = (url or "").strip()
         if not url:
             return FetchResult.failure(url, "No URL provided.", ErrorCategory.EMPTY_INPUT)
         if not self._fetch_context.native_fetch or not (self.config.api_key or "").strip():
-            return super().fetch(url)
+            return None
 
         blocked = self.validate_url_for_provider(url)
         if blocked is not None:
             return blocked
 
         try:
-            extracted = self._extract_url(url)
+            return self._extract_url(url)
         except (ProviderAuthError, ProviderConfigError, ProviderBillingError, ProviderRateLimitError) as e:
             return _fetch_provider_failure(url, e)
         except ProviderError:
-            return super().fetch(url)
+            return None
 
-        if extracted is not None:
-            return extracted
+    def fetch(self, url: str) -> FetchResult:
+        url = (url or "").strip()
+        native = self.fetch_native(url)
+        if native is not None:
+            return native
         return super().fetch(url)
 
     def _extract_url(self, url: str) -> FetchResult | None:

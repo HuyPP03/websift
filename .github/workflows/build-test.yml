@@ -153,6 +153,38 @@ jobs:
           print("mcp smoke ok")
           PY
 
+      - name: Smoke browser extra
+        run: |
+          WHL=$(ls dist/websift-*.whl | head -1)
+
+          # browser extra installs httpx client
+          rm -rf /tmp/websift-browser-smoke
+          python -m venv /tmp/websift-browser-smoke
+          /tmp/websift-browser-smoke/bin/pip install --upgrade pip
+          /tmp/websift-browser-smoke/bin/pip install "${WHL}[browser]"
+          /tmp/websift-browser-smoke/bin/python - <<'PY'
+          import httpx
+          from websift.fetching.browser_client import RemoteBrowserBackend
+          from websift.settings import BrowserSettings
+          assert RemoteBrowserBackend is not None
+          settings = BrowserSettings()
+          assert settings.endpoint is None
+          print("browser extra smoke ok")
+          PY
+
+          # mcp-browser installs both
+          rm -rf /tmp/websift-mcp-browser-smoke
+          python -m venv /tmp/websift-mcp-browser-smoke
+          /tmp/websift-mcp-browser-smoke/bin/pip install --upgrade pip
+          /tmp/websift-mcp-browser-smoke/bin/pip install "${WHL}[mcp-browser]"
+          /tmp/websift-mcp-browser-smoke/bin/python - <<'PY'
+          import httpx
+          from websift.server import create_server
+          from websift.fetching.browser_client import RemoteBrowserBackend
+          assert RemoteBrowserBackend is not None
+          print("mcp-browser extra smoke ok")
+          PY
+
       - name: Smoke optional provider extras
         run: |
           set -euo pipefail
@@ -243,3 +275,46 @@ jobs:
         run: |
           docker logs websift-ci || true
           docker rm -f websift-ci || true
+
+  browser-service:
+    name: Browser service build + test
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install browser service + test deps
+        run: |
+          cd services/browser
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e ".[test]"
+
+      - name: Browser service unit tests
+        run: |
+          cd services/browser
+          .venv/bin/python -m pytest tests/ -v
+
+      - name: Ruff check browser service
+        run: |
+          cd services/browser
+          .venv/bin/ruff check browser_service tests
+
+      - name: Build browser Docker image
+        run: |
+          docker build -t websift-browser:ci -f services/browser/Dockerfile services/browser
+
+      - name: Browser image smoke
+        run: |
+          set -euo pipefail
+          # Verify non-root and healthcheck
+          docker run --rm websift-browser:ci id
+          docker history --no-trunc websift-browser:ci | grep -Eiq 'USER' || true

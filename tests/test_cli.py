@@ -57,17 +57,31 @@ def test_cli_search_delegates(monkeypatch, capsys):
 def test_cli_fetch_delegates(monkeypatch, capsys):
     from websift import cli as cli_mod
 
+    seen = {}
+
     class FakeClient:
         def __init__(self, *a, **k):
-            pass
+            seen["backend"] = k["settings"].fetch.backend
 
         def fetch(self, url: str) -> str:
             return f"PAGE:{url}"
 
     monkeypatch.setattr(cli_mod, "WebSearchClient", FakeClient)
     with pytest.raises(SystemExit) as ei:
-        main(["fetch", "https://example.com/", "--max-chars", "1000", "--timeout", "12"])
+        main(
+            [
+                "fetch",
+                "https://example.com/",
+                "--max-chars",
+                "1000",
+                "--timeout",
+                "12",
+                "--backend",
+                "http",
+            ]
+        )
     assert ei.value.code == 0
+    assert seen["backend"] == "http"
     assert "PAGE:https://example.com/" in capsys.readouterr().out
 
 

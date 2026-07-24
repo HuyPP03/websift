@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import ipaddress
 import os
 from dataclasses import dataclass, field, replace
 from typing import Mapping
+from urllib.parse import urlsplit
 
 from websift.config import (
     MAX_COMPRESSED_BYTES,
@@ -259,6 +261,7 @@ class ProviderSettings:
 
 @dataclass(frozen=True)
 class FetchSettings:
+    backend: str = "auto"  # auto | http | browser
     timeout_seconds: float = 30.0
     max_bytes: int = MAX_FETCH_BYTES
     max_pdf_bytes: int = MAX_PDF_FETCH_BYTES
@@ -276,6 +279,27 @@ class FetchSettings:
     denied_domains: frozenset[str] = frozenset()
     # When True (default), Tavily/Exa may use paid exact-URL extraction for fetch.
     native_fetch: bool = True
+
+
+@dataclass(frozen=True)
+class BrowserSettings:
+    endpoint: str | None = None
+    bearer_token: str | None = None
+    allow_insecure_endpoint: bool = False
+    timeout_seconds: float = 45.0
+    post_load_wait_ms: int = 500
+    max_html_bytes: int = 5 * 1024 * 1024
+    max_response_bytes: int = 6 * 1024 * 1024
+    max_concurrency: int = 4
+
+    def __repr__(self) -> str:  # pragma: no cover - trivial
+        token = _REDACTED if self.bearer_token else None
+        return (
+            f"BrowserSettings(endpoint={self.endpoint!r}, bearer_token={token!r}, "
+            f"allow_insecure_endpoint={self.allow_insecure_endpoint}, timeout_seconds={self.timeout_seconds}, "
+            f"post_load_wait_ms={self.post_load_wait_ms}, max_html_bytes={self.max_html_bytes}, "
+            f"max_response_bytes={self.max_response_bytes}, max_concurrency={self.max_concurrency})"
+        )
 
 
 @dataclass(frozen=True)
@@ -330,6 +354,7 @@ class AppSettings:
     server: ServerSettings = field(default_factory=ServerSettings)
     provider: ProviderSettings = field(default_factory=ProviderSettings)
     fetch: FetchSettings = field(default_factory=FetchSettings)
+    browser: BrowserSettings = field(default_factory=BrowserSettings)
     extraction: ExtractionSettings = field(default_factory=ExtractionSettings)
     concurrency: ConcurrencySettings = field(default_factory=ConcurrencySettings)
     cache: CacheSettings = field(default_factory=CacheSettings)
@@ -342,6 +367,7 @@ class AppSettings:
             "server",
             "provider",
             "fetch",
+            "browser",
             "extraction",
             "concurrency",
             "cache",
@@ -388,6 +414,12 @@ class AppSettings:
             raise SettingsError("SEARCH_TIMEOUT_SECONDS must be > 0", code="invalid_timeout")
         if self.fetch.timeout_seconds <= 0:
             raise SettingsError("FETCH_TIMEOUT_SECONDS must be > 0", code="invalid_timeout")
+        if self.fetch.backend not in {"auto", "http", "browser"}:
+            raise SettingsError(
+                f"Invalid FETCH_BACKEND {self.fetch.backend!r}. Allowed: auto, http, browser",
+                code="invalid_fetch_backend",
+            )
+        self._validate_browser()
         if self.provider.retry_max < 0:
             raise SettingsError("SEARCH_RETRY_MAX must be >= 0", code="invalid_retry")
         if self.fetch.max_redirects < 0:
@@ -452,6 +484,63 @@ class AppSettings:
                 )
             _require_provider_credentials(fb_name, self.provider, role="SEARCH_FALLBACK_PROVIDERS")
             seen.add(fb_name)
+
+    def _validate_browser(self) -> None:
+        browser = self.browser
+        if browser.timeout_seconds <= 0:
+            raise SettingsError("BROWSER_TIMEOUT_SECONDS must be > 0", code="invalid_browser_timeout")
+        if browser.post_load_wait_ms < 0:
+            raise SettingsError("BROWSER_POST_LOAD_WAIT_MS must be >= 0", code="invalid_browser_wait")
+        if browser.max_html_bytes < 1 or browser.max_response_bytes < 1:
+            raise SettingsError("Browser byte limits must be >= 1", code="invalid_browser_bytes")
+        if browser.max_response_bytes < browser.max_html_bytes:
+            raise SettingsError(
+                "BROWSER_MAX_RESPONSE_BYTES must be >= BROWSER_MAX_HTML_BYTES",
+                code="invalid_browser_bytes",
+            )
+        if browser.max_concurrency < 1:
+            raise SettingsError("BROWSER_MAX_CONCURRENCY must be >= 1", code="invalid_browser_concurrency")
+        endpoint = (browser.endpoint or "").strip()
+        if self.fetch.backend == "browser" and not endpoint:
+            raise SettingsError(
+                "BROWSER_ENDPOINT is required when FETCH_BACKEND=browser",
+                code="missing_browser_endpoint",
+            )
+        if not endpoint:
+            return
+        try:
+            parsed = urlsplit(endpoint)
+            port = parsed.port
+        except ValueError as e:
+            raise SettingsError("BROWSER_ENDPOINT is invalid", code="invalid_browser_endpoint") from e
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or not parsed.hostname:
+            raise SettingsError(
+                "BROWSER_ENDPOINT must be an absolute http(s) URL",
+                code="invalid_browser_endpoint",
+            )
+        if parsed.username is not None or parsed.password is not None or "@" in parsed.netloc:
+            raise SettingsError("BROWSER_ENDPOINT must not contain userinfo", code="invalid_browser_endpoint")
+        if parsed.query or parsed.fragment:
+            raise SettingsError(
+                "BROWSER_ENDPOINT must not contain a query or fragment",
+                code="invalid_browser_endpoint",
+            )
+        if parsed.path not in {"", "/"}:
+            raise SettingsError("BROWSER_ENDPOINT must not contain a path", code="invalid_browser_endpoint")
+        if port is not None and not (1 <= port <= 65535):
+            raise SettingsError("BROWSER_ENDPOINT has an invalid port", code="invalid_browser_endpoint")
+        if parsed.scheme == "http" and not browser.allow_insecure_endpoint:
+            host = parsed.hostname.rstrip(".").lower()
+            try:
+                loopback = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                loopback = host == "localhost"
+            if not loopback:
+                raise SettingsError(
+                    "HTTP BROWSER_ENDPOINT is allowed only for loopback hosts unless "
+                    "BROWSER_ALLOW_INSECURE_ENDPOINT=true",
+                    code="insecure_browser_endpoint",
+                )
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> AppSettings:
@@ -520,6 +609,7 @@ class AppSettings:
                 endpoints=endpoints,
             ),
             fetch=FetchSettings(
+                backend=_get_str(env, "FETCH_BACKEND", "auto").strip().lower() or "auto",
                 timeout_seconds=fetch_timeout,
                 max_bytes=_get_int(env, "FETCH_MAX_BYTES", MAX_FETCH_BYTES, min_value=1),
                 max_pdf_bytes=_get_int(env, "FETCH_MAX_PDF_BYTES", MAX_PDF_FETCH_BYTES, min_value=1),
@@ -537,6 +627,16 @@ class AppSettings:
                 ),
                 denied_domains=frozenset(d.lower() for d in _parse_csv(_get_optional_str(env, "FETCH_DENIED_DOMAINS"))),
                 native_fetch=_get_bool(env, "PROVIDER_NATIVE_FETCH", True),
+            ),
+            browser=BrowserSettings(
+                endpoint=_get_optional_str(env, "BROWSER_ENDPOINT"),
+                bearer_token=_get_optional_str(env, "BROWSER_TOKEN"),
+                allow_insecure_endpoint=_get_bool(env, "BROWSER_ALLOW_INSECURE_ENDPOINT", False),
+                timeout_seconds=_get_float(env, "BROWSER_TIMEOUT_SECONDS", 45.0, min_value=0.001),
+                post_load_wait_ms=_get_int(env, "BROWSER_POST_LOAD_WAIT_MS", 500, min_value=0),
+                max_html_bytes=_get_int(env, "BROWSER_MAX_HTML_BYTES", 5 * 1024 * 1024, min_value=1),
+                max_response_bytes=_get_int(env, "BROWSER_MAX_RESPONSE_BYTES", 6 * 1024 * 1024, min_value=1),
+                max_concurrency=_get_int(env, "BROWSER_MAX_CONCURRENCY", 4, min_value=1),
             ),
             extraction=ExtractionSettings(
                 max_page_chars=_get_int(env, "PAGE_MAX_CHARS", MAX_PAGE_CHARS, min_value=1),

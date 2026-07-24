@@ -225,6 +225,7 @@ class WebSearchClient:
         allow_unsupported_filters: bool | None = None,
         allow_http: bool | None = None,
         native_fetch: bool | None = None,
+        fetch_backend: str | None = None,
         include_links: bool | None = None,
         include_images: bool | None = None,
         output_format: str | None = None,
@@ -252,6 +253,7 @@ class WebSearchClient:
                 allow_unsupported_filters,
                 allow_http,
                 native_fetch,
+                fetch_backend,
                 include_links,
                 include_images,
                 output_format,
@@ -277,11 +279,13 @@ class WebSearchClient:
                 allow_unsupported_filters=allow_unsupported_filters,
                 allow_http=allow_http,
                 native_fetch=native_fetch,
+                fetch_backend=fetch_backend,
                 include_links=include_links,
                 include_images=include_images,
                 output_format=output_format,
                 settings_provided=settings is not None,
             )
+            resolved.validate()
             self._settings = resolved
             self._pdf_semaphore = pdf_semaphore
             self.max_results = resolved.provider.max_results
@@ -302,6 +306,7 @@ class WebSearchClient:
                     fetch_context=self._fetch_context,
                     pdf_semaphore=pdf_semaphore,
                 )
+            self._init_fetch_orchestrator(backend=resolved.fetch.backend)
             self._init_cache(resolved.cache)
         else:
             # Fast legacy path: plain kwargs, default DDGS, no AppSettings tree.
@@ -326,7 +331,77 @@ class WebSearchClient:
                     pdf_semaphore=pdf_semaphore,
                 )
                 self._provider = self._primary_provider
+            self._init_fetch_orchestrator(backend="auto")
             self._init_cache(None)
+
+    def _get_browser_settings(self) -> "BrowserSettings | None":
+        """Return browser settings from AppSettings or env (legacy path fallback)."""
+        if self._settings is not None:
+            if self._settings.browser.endpoint:
+                return self._settings.browser
+            return None
+        # Legacy path: read browser settings directly from environment.
+        import os
+
+        endpoint = os.environ.get("BROWSER_ENDPOINT", "").strip()
+        if not endpoint:
+            return None
+        from websift.settings import BrowserSettings
+
+        return BrowserSettings(
+            endpoint=endpoint,
+            bearer_token=os.environ.get("BROWSER_TOKEN", "").strip() or None,
+            allow_insecure_endpoint=os.environ.get("BROWSER_ALLOW_INSECURE_ENDPOINT", "").lower() in ("true", "1", "yes"),
+            timeout_seconds=float(os.environ.get("BROWSER_TIMEOUT_SECONDS", "45")),
+            post_load_wait_ms=int(os.environ.get("BROWSER_POST_LOAD_WAIT_MS", "500")),
+            max_html_bytes=int(os.environ.get("BROWSER_MAX_HTML_BYTES", str(5 * 1024 * 1024))),
+            max_response_bytes=int(os.environ.get("BROWSER_MAX_RESPONSE_BYTES", str(6 * 1024 * 1024))),
+            max_concurrency=int(os.environ.get("BROWSER_MAX_CONCURRENCY", "4")),
+        )
+
+    def _init_fetch_orchestrator(self, *, backend: str) -> None:
+        from websift.fetching.backend import CallableFetchBackend
+        from websift.fetching.http import HttpFetchBackend
+        from websift.fetching.orchestrator import FetchOrchestrator
+
+        provider = self._primary_provider
+        native_stage = getattr(provider, "fetch_native", None)
+        if not callable(native_stage):
+            native_stage = None
+        if isinstance(provider, BaseProvider) and (
+            native_stage is not None or type(provider).fetch is BaseProvider.fetch
+        ):
+            http_backend = HttpFetchBackend(self._fetch_context, pdf_semaphore=self._pdf_semaphore)
+        else:
+            native_stage = None
+            http_backend = CallableFetchBackend(
+                lambda url: getattr(provider, "fetch")(url),
+                fingerprint=f"custom-provider:{type(provider).__module__}.{type(provider).__qualname__}",
+            )
+        browser_backend = None
+        browser_settings = self._get_browser_settings()
+        if browser_settings is not None:
+            from websift.fetching.browser_client import RemoteBrowserBackend
+
+            browser_backend = RemoteBrowserBackend(browser_settings, self._fetch_context)
+        self._browser_backend = browser_backend
+        self._fetch_orchestrator = FetchOrchestrator(
+            http_backend=http_backend,
+            backend=backend,
+            browser_backend=browser_backend,
+            native_stage=native_stage,
+        )
+
+    def close(self) -> None:
+        close = getattr(getattr(self, "_browser_backend", None), "close", None)
+        if callable(close):
+            close()
+
+    def __enter__(self) -> WebSearchClient:
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
 
     def _init_cache(self, cache_settings) -> None:
         """Wire opt-in cache (memory or disk; disabled unless CacheSettings.enabled)."""
@@ -494,31 +569,61 @@ class WebSearchClient:
             estimate_fetch_result_size,
             make_fetch_cache_key,
         )
+        from websift.security import preflight_fetch_url
 
         url = (url or "").strip()
         if not url:
             return FetchResult.failure(url, "No URL provided.", ErrorCategory.EMPTY_INPUT)
 
+        ctx = self._fetch_context
+        ok, reason, preflight = preflight_fetch_url(
+            url,
+            allow_http=ctx.allow_http,
+            allowed_ports=ctx.allowed_ports or None,
+            allowed_domains=ctx.allowed_domains or None,
+            denied_domains=ctx.denied_domains or None,
+        )
+        if not ok or preflight is None:
+            category = ErrorCategory.BLOCKED
+            if "DNS" in reason or "no address found" in reason:
+                category = ErrorCategory.NETWORK
+            return FetchResult.failure(url, reason, category)
+        url = preflight.normalized_url
+
         cache_key = None
         if self._cache is not None and self._fetch_ttl > 0:
-            ctx = self._fetch_context
             provider_name = str(getattr(self._primary_provider, "name", None) or "unknown")
+            backend = self._settings.fetch.backend if self._settings is not None else "auto"
             cache_key = make_fetch_cache_key(
                 url,
+                timeout_seconds=float(ctx.timeout_seconds),
+                max_bytes=int(ctx.max_bytes),
+                max_pdf_bytes=int(ctx.max_pdf_bytes),
+                max_redirects=int(ctx.max_redirects),
+                max_compressed_bytes=int(ctx.max_compressed_bytes),
+                max_decompressed_bytes=int(ctx.max_decompressed_bytes),
+                pdf_max_pages=int(ctx.pdf_max_pages),
+                pdf_max_chars=int(ctx.pdf_max_chars),
+                allow_http=bool(ctx.allow_http),
+                allowed_ports=frozenset(ctx.allowed_ports),
+                allowed_domains=frozenset(ctx.allowed_domains),
+                denied_domains=frozenset(ctx.denied_domains),
                 max_page_chars=int(ctx.max_page_chars),
+                min_main_content_chars=int(ctx.min_main_content_chars),
                 include_links=bool(ctx.include_links),
                 include_images=bool(ctx.include_images),
                 output_format=str(ctx.output_format),
                 native_fetch=bool(ctx.native_fetch),
-                allow_http=bool(ctx.allow_http),
+                backend=backend,
                 provider=provider_name,
+                implementation_fingerprint=self._fetch_orchestrator.fingerprint,
             )
             hit = self._cache.get(cache_key)
             if isinstance(hit, FetchResult):
                 return hit
 
         try:
-            result = self._primary_provider.fetch(url)
+            result = self._fetch_orchestrator.fetch(url)
         except ProviderError as e:
             category, message = _provider_error_to_fetch(e)
             return FetchResult.failure(url, message, category)
@@ -556,6 +661,7 @@ def _resolve_client_settings(
     allow_unsupported_filters: bool | None,
     allow_http: bool | None,
     native_fetch: bool | None,
+    fetch_backend: str | None,
     include_links: bool | None,
     include_images: bool | None,
     output_format: str | None,
@@ -625,6 +731,8 @@ def _resolve_client_settings(
 
     if native_fetch is not None:
         fetch = replace(fetch, native_fetch=bool(native_fetch))
+    if fetch_backend is not None:
+        fetch = replace(fetch, backend=str(fetch_backend).strip().lower())
     if include_links is not None:
         extraction = replace(extraction, include_links=bool(include_links))
     if include_images is not None:

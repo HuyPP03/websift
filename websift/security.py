@@ -57,6 +57,18 @@ class ValidatedURL:
         return (self.scheme == "https" and self.port == 443) or (self.scheme == "http" and self.port == 80)
 
 
+@dataclass(frozen=True)
+class FetchURLPreflight:
+    """Validated fetch target and its currently policy-approved DNS pin."""
+
+    validated: ValidatedURL
+    pinned_ip: str
+
+    @property
+    def normalized_url(self) -> str:
+        return self.validated.original
+
+
 def hostname_matches_domain(hostname: str, pattern: str) -> bool:
     """Return True if ``hostname`` equals ``pattern`` or is a subdomain of it.
 
@@ -192,6 +204,31 @@ def validate_http_url(
             parsed=parsed,
         ),
     )
+
+
+def preflight_fetch_url(
+    url: str,
+    *,
+    allow_http: bool = True,
+    allowed_ports: frozenset[int] | set[int] | None = None,
+    allowed_domains: frozenset[str] | set[str] | None = None,
+    denied_domains: frozenset[str] | set[str] | None = None,
+) -> tuple[bool, str, FetchURLPreflight | None]:
+    """Validate fetch policy and current DNS answers without opening a socket."""
+    ok, reason, validated = validate_http_url(
+        url,
+        allow_http=allow_http,
+        allowed_ports=allowed_ports,
+        allowed_domains=allowed_domains,
+        denied_domains=denied_domains,
+    )
+    if not ok or validated is None:
+        return False, reason, None
+
+    ok, reason, pinned_ip = resolve_host(validated.hostname, validated.port)
+    if not ok:
+        return False, reason, None
+    return True, "", FetchURLPreflight(validated=validated, pinned_ip=pinned_ip)
 
 
 def resolve_host(hostname: str, port: int) -> tuple[bool, str, str]:
